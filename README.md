@@ -178,6 +178,30 @@ shard.ipfs_url()                    // https://ipfs.io/ipfs/bafk...
 shard.paste_url("http://host:8090") // http://host:8090/raw/my-data
 ```
 
+## Tools
+
+### `tools/dasl_reader.py` — Python DASL/CBOR reader
+
+A standalone Python tool for reading DA51-tagged CBOR shards and parsing 64-bit DASL addresses.
+
+Requires: `pip install cbor2` (or use the nix flake from [neural-moonshine](https://github.com/fargolo/neural-moonshine))
+
+```bash
+# Parse a DASL address
+python3 tools/dasl_reader.py addr 0xDA510001F9080000
+
+# Read a CBOR shard
+python3 tools/dasl_reader.py read shards/note1.cbor
+
+# Scan a directory for all shards
+python3 tools/dasl_reader.py scan shards/
+
+# Export shard content as binary
+python3 tools/dasl_reader.py export shards/ output.bin
+```
+
+Supports all DASL address types: MonsterWalk, ASTNode, Protocol, NestedCID, HarmonicPath, ShardID, Eigenspace, Hauptmodul.
+
 ## License
 
 MIT OR Apache-2.0
