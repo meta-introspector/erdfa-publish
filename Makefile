@@ -37,3 +37,18 @@ refresh:
 
 index:
 	nix run -- index --dir $(DIR) $(if $(OUT),--out $(OUT))
+
+# cbor2agda — translate CBOR/DASL to Agda module
+# usage: make cbor2agda FILE=foo.dasl [MOD=ModName] [OUT=Foo.agda]
+cbor2agda:
+	nix develop -c cargo run --bin cbor2agda -- $(FILE) $(MOD) $(OUT)
+
+# Collect perf parquet as DA51 CBOR shards
+# usage: make perf SRC=./parquet_dir DIR=./shards
+perf:
+	nix run -- perf --src $(SRC) --dir $(DIR)
+
+# Export DA51 CBOR shards as Agda module
+# usage: make agda DIR=./shards [OUT=PerfHistory.agda] [MODULE=PerfHistory]
+agda:
+	nix run -- agda --dir $(DIR) $(if $(OUT),--out $(OUT)) $(if $(MODULE),--module $(MODULE))

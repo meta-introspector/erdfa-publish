@@ -186,7 +186,7 @@ fn cbor_str(s: &str, out: &mut Vec<u8>) {
 }
 
 /// Quick shard from RDFa triples (wire-compatible CBOR, no DA51 tag).
-pub fn triple_shard(id: &str, triples: &[(&str, &str, &str)]) -> (String, Vec<u8>) {
+pub fn triple_shard(_id: &str, triples: &[(&str, &str, &str)]) -> (String, Vec<u8>) {
     let cbor = encode_triples(triples);
     let cid = content_cid(&cbor);
     (cid, cbor)

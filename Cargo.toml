@@ -20,7 +20,17 @@ ciborium = "0.2"
 clap = { version = "4", features = ["derive"] }
 parquet = { version = "53", default-features = false, features = ["arrow", "snap"] }
 arrow = { version = "53", default-features = false, features = ["json"] }
+linux-perf-data = "0.6"
+anyhow = "1"
 
 [[bin]]
 name = "erdfa-cli"
 path = "src/bin/erdfa-cli.rs"
+
+[[bin]]
+name = "cbor2agda"
+path = "src/bin/cbor2agda.rs"
+
+[[bin]]
+name = "cbor2lean4"
+path = "src/bin/cbor2lean4.rs"
