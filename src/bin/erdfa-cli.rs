@@ -90,6 +90,27 @@ enum Cmd {
         #[arg(long)]
         dir: PathBuf,
     },
+    /// Create a Cl(15,0,0) experiment shard (DA51-tagged)
+    Experiment {
+        /// Output directory for CBOR shard
+        #[arg(long)]
+        dir: PathBuf,
+        /// Experiment ID
+        #[arg(long)]
+        id: String,
+        /// 15 comma-separated weights (one per genus-0 prime)
+        #[arg(long)]
+        weights: String,
+        /// Topology: chain, star, full
+        #[arg(long, default_value = "chain")]
+        topo: String,
+        /// Walk steps
+        #[arg(long, default_value = "100")]
+        steps: u32,
+        /// Hypothesis text
+        #[arg(long, default_value = "")]
+        hypothesis: String,
+    },
     /// Export DA51 CBOR shards as an Agda module
     Agda {
         /// Directory containing .cbor shards
@@ -115,6 +136,8 @@ fn main() {
         Cmd::Refresh { src, dir, max_depth } => cmd_refresh(&src, &dir, max_depth),
         Cmd::Index { dir, out } => cmd_index(&dir, out.as_deref()),
         Cmd::Perf { src, dir } => cmd_perf(&src, &dir),
+        Cmd::Experiment { dir, id, weights, topo, steps, hypothesis } =>
+            cmd_experiment(&dir, &id, &weights, &topo, steps, &hypothesis),
         Cmd::Agda { dir, out, module } => cmd_agda(&dir, &out, &module),
     }
 }
@@ -154,6 +177,39 @@ fn cmd_show(file: &PathBuf) {
         "component": serde_json::to_value(&shard.component).unwrap(),
     });
     println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+}
+
+fn cmd_experiment(dir: &PathBuf, id: &str, weights_str: &str, topo: &str, steps: u32, hypothesis: &str) {
+    let primes = [2,3,5,7,11,13,17,19,23,29,31,41,47,59,71u64];
+    let weights: Vec<f64> = weights_str.split(',')
+        .map(|s| s.trim().parse::<f64>().expect("weights must be 15 comma-separated floats"))
+        .collect();
+    assert_eq!(weights.len(), 15, "need exactly 15 weights (one per genus-0 prime)");
+
+    let exp = json!({
+        "type": "cl15-experiment",
+        "weights": weights,
+        "primes": primes,
+        "topology": topo,
+        "steps": steps,
+        "hypothesis": hypothesis,
+        "weight_prime_pairs": primes.iter().zip(weights.iter())
+            .map(|(p, w)| json!({"prime": p, "weight": w}))
+            .collect::<Vec<_>>(),
+    });
+    let source = serde_json::to_string_pretty(&exp).unwrap();
+    let component = Component::Code { language: "json".into(), source };
+    let shard = Shard::new(id, component)
+        .with_tags(vec!["DA51".into(), "cl15".into(), "experiment".into(), topo.into()]);
+    let cbor = shard.to_cbor();
+    fs::create_dir_all(dir).ok();
+    let path = dir.join(format!("{}.cbor", id));
+    fs::write(&path, &cbor).expect("cannot write");
+    let obj = json!({
+        "id": shard.id, "cid": shard.cid, "file": path.to_string_lossy(),
+        "size": cbor.len(), "topology": topo, "steps": steps,
+    });
+    println!("{}", serde_json::to_string(&obj).unwrap());
 }
 
 fn cmd_create(dir: &PathBuf, id: &str, typ: &str, text: &str, tags: &[String]) {
