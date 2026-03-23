@@ -6,3 +6,4 @@
 /shards/kiro-chats/indexes/*
 !/shards/kiro-chats/indexes/INDEX_SUMMARY.json
 result
+*.olean
