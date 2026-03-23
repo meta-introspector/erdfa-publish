@@ -51,9 +51,9 @@ fn main() {
     out.push_str("open import Agda.Builtin.String\n");
     out.push_str("open import Agda.Builtin.Bool\n");
     out.push_str("open import Agda.Builtin.Sigma\n\n");
-    // Pair type for maps
+    // Pair type for maps (must come before CborVal which uses ×)
     out.push_str("data Maybe (A : Set) : Set where\n  nothing : Maybe A\n  just    : A → Maybe A\n\n");
-    out.push_str("data CborTag : Set where\n  tag : Nat → CborVal → CborTag\n\n");
+    out.push_str("infixr 4 _,_\ndata _×_ (A B : Set) : Set where\n  _,_ : A → B → A × B\n\n");
     out.push_str("data CborVal : Set where\n");
     out.push_str("  cnat    : Nat → CborVal\n");
     out.push_str("  cneg    : Nat → CborVal\n");
@@ -65,7 +65,6 @@ fn main() {
     out.push_str("  cbool   : Bool → CborVal\n");
     out.push_str("  cnull   : CborVal\n");
     out.push_str("  cfloat  : Nat → CborVal\n\n");
-    out.push_str("infixr 4 _,_\ndata _×_ (A B : Set) : Set where\n  _,_ : A → B → A × B\n\n");
 
     if values.len() == 1 {
         out.push_str("datum : CborVal\n");

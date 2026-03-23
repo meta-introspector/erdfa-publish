@@ -1,0 +1,108 @@
+{
+  "composite_blade": "0x7ffb",
+  "composite_grade": 14,
+  "fractran_blade": "0x05e2",
+  "kind_counts": {
+    "const": 172,
+    "enum": 24,
+    "field": 1063,
+    "fn": 754,
+    "impl": 183,
+    "let": 4349,
+    "macro": 3,
+    "method": 834,
+    "mod": 158,
+    "struct": 283,
+    "trait": 1,
+    "type": 4,
+    "use": 654,
+    "variant": 153
+  },
+  "lineage": {
+    "build_rs": "build.rs (DeclVisitor + ZosVisitor + FractranExtractor)",
+    "mkbootstrap": "/mnt/data1/meta-introspector/src/mkbootstrap.rs",
+    "mkbuildrs": "/mnt/data1/nix/vendor/rust/cargo2nix/submodules/patch-build-rs/patch-build-rs-macros/src/mkbuildrs.rs"
+  },
+  "ontology": "mmgroup-rust-bindings",
+  "total_decls": 8635,
+  "total_files": 197,
+  "version": "1.0",
+  "zkperf_registers": {
+    "r0": {
+      "count": 754,
+      "kind": "fn",
+      "prime": 2
+    },
+    "r1": {
+      "count": 172,
+      "kind": "const",
+      "prime": 3
+    },
+    "r10": {
+      "count": 3,
+      "kind": "macro",
+      "prime": 31
+    },
+    "r11": {
+      "count": 4349,
+      "kind": "let",
+      "prime": 41
+    },
+    "r12": {
+      "count": 1063,
+      "kind": "field",
+      "prime": 47
+    },
+    "r13": {
+      "count": 153,
+      "kind": "variant",
+      "prime": 59
+    },
+    "r14": {
+      "count": 834,
+      "kind": "method",
+      "prime": 71
+    },
+    "r2": {
+      "count": 0,
+      "kind": "static",
+      "prime": 5
+    },
+    "r3": {
+      "count": 283,
+      "kind": "struct",
+      "prime": 7
+    },
+    "r4": {
+      "count": 24,
+      "kind": "enum",
+      "prime": 11
+    },
+    "r5": {
+      "count": 4,
+      "kind": "type",
+      "prime": 13
+    },
+    "r6": {
+      "count": 183,
+      "kind": "impl",
+      "prime": 17
+    },
+    "r7": {
+      "count": 1,
+      "kind": "trait",
+      "prime": 19
+    },
+    "r8": {
+      "count": 654,
+      "kind": "use",
+      "prime": 23
+    },
+    "r9": {
+      "count": 158,
+      "kind": "mod",
+      "prime": 29
+    }
+  },
+  "zos_blade": "0x5704"
+}
