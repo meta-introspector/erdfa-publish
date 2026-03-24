@@ -1,0 +1,66 @@
+% Campaign: CICADA-71 Full Shard Distribution (devnet/testnet)
+% Use case: Distribute all 67 cicadia71 shards (~500KB) across
+%           71 cryptocurrency testnets + social media + NFT tiles
+% Strategy: Testnets are FREE. Use blockchain for immutability,
+%           social media for redundancy, NFT tiles for bulk.
+% Key insight: devnet = $0 cost for all blockchain operations.
+
+payload_bytes = 509977;     % actual total from SHARD_MANIFEST.json
+ecc_mode = 2;               % Golay [24,12,8] — M₂₄ Voyager-grade
+redundancy_factor = 1;      % 1× (71 testnets = natural redundancy)
+max_shards_total = 100;
+
+num_platforms = 10;
+
+platform_name = [
+  "solana-devnet",      % Shard 4: Solana Devnet — memo instructions
+  "solana-account",     % Shard 4: Solana Devnet — rent-exempt accounts (free on devnet)
+  "eth-sepolia",        % Shard 1: Ethereum Sepolia — calldata
+  "nft-tile",           % IPFS 512×512 PNG tiles
+  "tweet280",           % Twitter/X ZWC
+  "discord",            % Discord hex code fences
+  "tiktok",             % TikTok desc ZWC
+  "instagram",          % Instagram caption ZWC
+  "mastodon",           % Mastodon ZWC
+  "bluesky"             % Bluesky ZWC
+];
+
+capacity = [
+  558,      % solana-devnet memo (base58, 566 - 8 header)
+  10240,    % solana-account (10KB rent-exempt, free on devnet)
+  10240,    % eth-sepolia calldata (~10KB per tx on testnet)
+  196600,   % nft-tile (BitPlane6 512×512)
+  55,       % tweet280 ZWC
+  972,      % discord hex fence
+  537,      % tiktok ZWC
+  537,      % instagram ZWC
+  112,      % mastodon ZWC
+  60        % bluesky ZWC
+];
+
+max_carriers = [
+  71,       % solana-devnet: one memo per shard
+  71,       % solana-account: one account per shard
+  20,       % eth-sepolia: 20 txns
+  3,        % nft-tile: 3 tiles
+  20,       % tweet280
+  10,       % discord
+  10,       % tiktok
+  10,       % instagram
+  10,       % mastodon
+  10        % bluesky
+];
+
+% DEVNET/TESTNET = ALL FREE
+cost_microusd = [
+  0,        % solana-devnet: airdrop SOL, $0
+  0,        % solana-account: devnet rent is free
+  0,        % eth-sepolia: faucet ETH, $0
+  0,        % nft-tile: IPFS pin (self-hosted), $0
+  0,        % tweet280: free
+  0,        % discord: free
+  0,        % tiktok: free
+  0,        % instagram: free
+  0,        % mastodon: free
+  0         % bluesky: free
+];

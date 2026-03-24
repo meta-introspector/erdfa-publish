@@ -1,0 +1,40 @@
+% Campaign: Multi-chain testnet spread (4KB doc across 5 blockchains)
+% Use case: Distribute a signed manifest across multiple blockchain testnets
+% Strategy: Use 5 different blockchain testnets for maximum chain diversity
+%           + social media for human-readable redundancy
+
+payload_bytes = 4096;
+ecc_mode = 2;               % Golay
+redundancy_factor = 2;      % 2× for critical document
+max_shards_total = 71;      % Gandalf threshold
+
+num_platforms = 9;
+
+platform_name = [
+  "solana-devnet",
+  "eth-sepolia",
+  "btc-testnet3",
+  "near-testnet",
+  "arweave-testnet",
+  "tweet280",
+  "discord",
+  "mastodon",
+  "bluesky"
+];
+
+capacity = [
+  558,      % solana memo
+  10240,    % eth calldata
+  80,       % btc OP_RETURN
+  10240,    % near function call args
+  10240,    % arweave tx data
+  55,       % tweet ZWC
+  972,      % discord hex
+  112,      % mastodon ZWC
+  60        % bluesky ZWC
+];
+
+max_carriers = [20, 5, 20, 5, 5, 20, 10, 10, 10];
+
+% ALL TESTNETS = FREE
+cost_microusd = [0, 0, 0, 0, 0, 0, 0, 0, 0];

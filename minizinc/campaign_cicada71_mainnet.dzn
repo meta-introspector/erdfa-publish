@@ -1,0 +1,41 @@
+% Campaign: CICADA-71 Mainnet Production
+% Use case: Same 500KB payload but on mainnet with real costs.
+% Shows the cost difference vs devnet.
+
+payload_bytes = 509977;
+ecc_mode = 2;               % Golay
+redundancy_factor = 1;
+max_shards_total = 100;
+
+num_platforms = 10;
+
+platform_name = [
+  "solana-memo",
+  "solana-account",
+  "eth-calldata",
+  "nft-tile",
+  "tweet280",
+  "discord",
+  "tiktok",
+  "instagram",
+  "mastodon",
+  "bluesky"
+];
+
+capacity = [558, 10240, 10240, 196600, 55, 972, 537, 537, 112, 60];
+
+max_carriers = [71, 71, 20, 3, 20, 10, 10, 10, 10, 10];
+
+% MAINNET COSTS (micro-USD)
+cost_microusd = [
+  10000,    % solana-memo: ~$0.01/tx
+  70000,    % solana-account: ~$0.07 per 10KB rent-exempt
+  500000,   % eth-calldata: ~$0.50 per 10KB at 30 gwei
+  50000,    % nft-tile: ~$0.05 IPFS pin + mint
+  0,        % tweet280: free
+  0,        % discord: free
+  0,        % tiktok: free
+  0,        % instagram: free
+  0,        % mastodon: free
+  0         % bluesky: free
+];
