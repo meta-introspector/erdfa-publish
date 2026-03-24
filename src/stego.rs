@@ -32,6 +32,8 @@ pub struct PngLsb;
 pub struct WavPhase;
 pub struct ZeroWidthText;
 pub struct RsHexComment;
+/// 6-layer bit-plane steganography on 512×512 RGB tiles (retro-sync compatible).
+pub struct BitPlane6;
 
 impl StegoPlugin for PngLsb {
     fn name(&self) -> &str { "png-lsb" }
@@ -152,6 +154,64 @@ impl StegoPlugin for RsHexComment {
     }
 }
 
+// ── BitPlane6: 6-layer bit-plane stego (retro-sync compatible) ──
+
+const BP_W: usize = 512;
+const BP_H: usize = 512;
+const BP_PIXELS: usize = BP_W * BP_H;
+const BP_PLANES: usize = 6;
+const BP_TILE_CAP: usize = BP_PIXELS * BP_PLANES / 8; // 196,608 bytes
+
+impl StegoPlugin for BitPlane6 {
+    fn name(&self) -> &str { "bitplane6" }
+    fn extension(&self) -> &str { "rgb" }
+    fn encode(&self, data: &[u8]) -> Vec<u8> {
+        let len = data.len().min(BP_TILE_CAP);
+        let mut rgb = vec![128u8; BP_PIXELS * 3];
+        // Embed length header (4 bytes BE) + data
+        let mut payload = (len as u32).to_be_bytes().to_vec();
+        payload.extend_from_slice(&data[..len]);
+        for (i, &byte) in payload.iter().enumerate() {
+            if i >= BP_TILE_CAP { break; }
+            for b in 0..8u8 {
+                let bit_idx = i * 8 + b as usize;
+                let px = bit_idx / BP_PLANES;
+                let plane = bit_idx % BP_PLANES;
+                if px >= BP_PIXELS { break; }
+                let ch = plane % 3;
+                let bit_pos = plane / 3;
+                let idx = px * 3 + ch;
+                let val = (byte >> b) & 1;
+                rgb[idx] = (rgb[idx] & !(1 << bit_pos)) | (val << bit_pos);
+            }
+        }
+        rgb
+    }
+    fn decode(&self, rgb: &[u8]) -> Option<Vec<u8>> {
+        if rgb.len() < BP_PIXELS * 3 { return None; }
+        let extract_bytes = |length: usize| -> Vec<u8> {
+            (0..length.min(BP_TILE_CAP)).map(|i| {
+                (0..8u8).map(|b| {
+                    let bit_idx = i * 8 + b as usize;
+                    let px = bit_idx / BP_PLANES;
+                    let plane = bit_idx % BP_PLANES;
+                    if px >= BP_PIXELS { return 0; }
+                    let ch = plane % 3;
+                    let bit_pos = plane / 3;
+                    let idx = px * 3 + ch;
+                    ((rgb[idx] >> bit_pos) & 1) << b
+                }).sum()
+            }).collect()
+        };
+        // Read 4-byte length header
+        let hdr = extract_bytes(4);
+        let len = u32::from_be_bytes(hdr[..4].try_into().ok()?) as usize;
+        if len > BP_TILE_CAP - 4 { return None; }
+        let all = extract_bytes(4 + len);
+        Some(all[4..4 + len].to_vec())
+    }
+}
+
 // ── Plugin chain (composable paths) ────────────────────────────
 
 /// A chain of stego plugins applied in sequence.
@@ -208,6 +268,7 @@ pub fn chain_from_config(config: &StegoConfig) -> StegoChain {
             "wav" | "wav-phase" => Box::new(WavPhase),
             "text" | "txt" | "zwc-text" => Box::new(ZeroWidthText),
             "source" | "rs" | "rs-hex" => Box::new(RsHexComment),
+            "bitplane" | "bitplane6" | "bp6" => Box::new(BitPlane6),
             other => {
                 // External plugin: would load from config.external[other] via libloading
                 // For now, skip unknown plugins with a warning
@@ -240,6 +301,7 @@ mod tests {
         let plugins: Vec<Box<dyn StegoPlugin>> = vec![
             Box::new(PngLsb), Box::new(WavPhase),
             Box::new(ZeroWidthText), Box::new(RsHexComment),
+            Box::new(BitPlane6),
         ];
         for p in &plugins {
             let enc = p.encode(data);
