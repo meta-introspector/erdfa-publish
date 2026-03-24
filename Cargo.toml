@@ -53,3 +53,11 @@ path = "src/bin/campaign_planner.rs"
 [[bin]]
 name = "stego-gossip"
 path = "src/bin/stego_gossip.rs"
+
+[[bin]]
+name = "ledger-to-nft"
+path = "src/bin/ledger_to_nft.rs"
+
+[[bin]]
+name = "solana-ingest"
+path = "src/bin/solana_ingest.rs"
