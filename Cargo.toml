@@ -11,19 +11,24 @@ keywords = ["cbor", "semantic", "shards", "a11y", "cft"]
 categories = ["encoding", "data-structures", "accessibility"]
 readme = "README.md"
 
+[features]
+default = ["native"]
+native = ["dep:parquet", "dep:arrow", "dep:linux-perf-data", "dep:libloading", "dep:lattice-safe-suite", "dep:clap"]
+wasm = []
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 hex = "0.4"
 ciborium = "0.2"
-clap = { version = "4", features = ["derive"] }
-parquet = { version = "53", default-features = false, features = ["arrow", "snap"] }
-arrow = { version = "53", default-features = false, features = ["json"] }
-linux-perf-data = "0.6"
+clap = { version = "4", features = ["derive"], optional = true }
+parquet = { version = "53", default-features = false, features = ["arrow", "snap"], optional = true }
+arrow = { version = "53", default-features = false, features = ["json"], optional = true }
+linux-perf-data = { version = "0.6", optional = true }
 anyhow = "1"
-lattice-safe-suite = "0.4"
-libloading = "0.8"
+lattice-safe-suite = { version = "0.4", optional = true }
+libloading = { version = "0.8", optional = true }
 
 [[bin]]
 name = "erdfa-cli"

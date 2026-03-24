@@ -6,11 +6,16 @@
 
 use erdfa_publish::privacy::{PrivacyShard, SignedPrivacyShard, MerkleTree};
 use erdfa_publish::stego::{self, StegoPlugin, StegoChain, StegoConfig, chain_from_config};
-use erdfa_publish::stego::{PngLsb, WavPhase, ZeroWidthText, RsHexComment, BitPlane6, Hamming743, Golay24128};
+use erdfa_publish::stego::{PngLsb, WavPhase, ZeroWidthText, RsHexComment, BitPlane6, Hamming743, Golay24128, Tweet280, DiscordBlock, InstaCaption, TikTokDesc, NftTile};
 use std::time::Instant;
 
 fn all_plugins() -> Vec<Box<dyn StegoPlugin>> {
-    vec![Box::new(PngLsb), Box::new(WavPhase), Box::new(ZeroWidthText), Box::new(RsHexComment), Box::new(BitPlane6), Box::new(Hamming743), Box::new(Golay24128)]
+    vec![
+        Box::new(PngLsb), Box::new(WavPhase), Box::new(ZeroWidthText), Box::new(RsHexComment),
+        Box::new(BitPlane6), Box::new(Hamming743), Box::new(Golay24128),
+        Box::new(Tweet280), Box::new(DiscordBlock), Box::new(InstaCaption),
+        Box::new(TikTokDesc), Box::new(NftTile),
+    ]
 }
 
 fn main() {
@@ -36,7 +41,7 @@ fn main() {
     println!("\n── 2. Plugin pairs ──");
     println!("{:<25} {:>10} {:>8} {:>6}", "chain", "carrier", "ratio", "ok");
     println!("{}", "-".repeat(55));
-    let names: Vec<&str> = vec!["png", "wav", "text", "rs", "bitplane6", "hamming743", "golay24"];
+    let names: Vec<&str> = vec!["png", "wav", "text", "rs", "bitplane6", "hamming743", "golay24", "tweet280", "discord", "instagram", "tiktok", "nft-tile"];
     for (i, a) in names.iter().enumerate() {
         for (j, b) in names.iter().enumerate() {
             if i == j { continue; }

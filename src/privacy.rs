@@ -200,6 +200,7 @@ pub struct SignedPrivacyShard {
 
 impl SignedPrivacyShard {
     /// Sign a PrivacyShard with ML-DSA-44.
+    #[cfg(feature = "native")]
     pub fn sign(shard: PrivacyShard) -> Result<Self, String> {
         use lattice_safe_suite::dilithium::{MlDsaKeyPair, ML_DSA_44};
         let kp = MlDsaKeyPair::generate(ML_DSA_44).map_err(|e| e.to_string())?;
@@ -213,6 +214,7 @@ impl SignedPrivacyShard {
     }
 
     /// Verify the PQ signature.
+    #[cfg(feature = "native")]
     pub fn verify(&self) -> bool {
         use lattice_safe_suite::dilithium::{MlDsaKeyPair, MlDsaSignature, ML_DSA_44};
         let msg = self.shard.signable_bytes();

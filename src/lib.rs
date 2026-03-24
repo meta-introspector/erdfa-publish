@@ -6,6 +6,11 @@ pub mod render;
 pub mod cft;
 pub mod privacy;
 pub mod stego;
+pub mod distribute;
+
+// Re-export for WASM consumers
+pub use stego::{StegoPlugin, StegoChain};
+pub use distribute::{DistributionPlan, DistributionTarget, Platform, AclTier, Ecc, IpfsManifest};
 
 /// DA51 CBOR tag (0xDA51 = 55889)
 const DASL_TAG: u64 = 55889;

@@ -41,6 +41,28 @@ pub struct Hamming743;
 /// From the EC Zoo: automorphism group = M₂₄ (Mathieu group). Used on Voyager 1 & 2.
 pub struct Golay24128;
 
+// ── Platform-tuned carriers ─────────────────────────────────────
+
+/// Twitter/X: zero-width chars between visible text, fits in 280-char tweet.
+/// Capacity: ~140 bytes per tweet. Survives Twitter's text processing.
+pub struct Tweet280;
+/// Discord: hex-encoded data in a markdown code fence (2000-char limit).
+/// Capacity: ~980 bytes per message. Verbatim text preservation.
+pub struct DiscordBlock;
+/// Instagram: zero-width chars in caption text (2200-char limit).
+/// Survives JPEG recompression — data lives in text, not pixels.
+/// Capacity: ~550 bytes per caption.
+pub struct InstaCaption;
+/// TikTok: zero-width chars in video description (2200-char limit).
+/// Video gets re-encoded but description text is preserved verbatim.
+pub struct TikTokDesc;
+/// NFT tile: alias for BitPlane6 (512×512 PNG on IPFS, nothing destroyed).
+/// Capacity: 196,608 bytes per tile. 71 tiles = ~13.3 MB.
+pub struct NftTile;
+/// Solana memo: base58-encoded data in a Solana memo instruction.
+/// Capacity: ~566 bytes per transaction. Immutable on-chain.
+pub struct SolanaMemo;
+
 impl StegoPlugin for PngLsb {
     fn name(&self) -> &str { "png-lsb" }
     fn extension(&self) -> &str { "png" }
@@ -405,6 +427,171 @@ impl StegoPlugin for Golay24128 {
     }
 }
 
+// ── Platform-tuned carriers ─────────────────────────────────────
+
+// Shared: zero-width encoding with configurable visible wrapper and char limit.
+// Uses U+200B (ZWSP), U+200C (ZWNJ), U+200D (ZWJ), U+FEFF (BOM) for 2 bits each.
+const ZW: [char; 4] = ['\u{200B}', '\u{200C}', '\u{200D}', '\u{FEFF}'];
+
+fn zw_encode_platform(data: &[u8], prefix: &str, suffix: &str, char_limit: usize) -> Vec<u8> {
+    let mut out = String::with_capacity(char_limit);
+    out.push_str(prefix);
+    // 4-byte length header
+    let len_bytes = (data.len() as u32).to_be_bytes();
+    let payload: Vec<u8> = len_bytes.iter().chain(data.iter()).copied().collect();
+    for &byte in &payload {
+        for shift in (0..8).step_by(2) {
+            let idx = ((byte >> shift) & 0x03) as usize;
+            out.push(ZW[idx]);
+            if out.chars().count() >= char_limit - suffix.len() {
+                break;
+            }
+        }
+    }
+    out.push_str(suffix);
+    out.into_bytes()
+}
+
+fn zw_decode_platform(carrier: &[u8], prefix: &str, suffix: &str) -> Option<Vec<u8>> {
+    let text = std::str::from_utf8(carrier).ok()?;
+    let body = text.strip_prefix(prefix)?.strip_suffix(suffix)?;
+    let mut bits: Vec<u8> = Vec::new();
+    for ch in body.chars() {
+        if let Some(idx) = ZW.iter().position(|&z| z == ch) {
+            bits.push(idx as u8);
+        }
+    }
+    // 4 crumbs per byte
+    let mut bytes = Vec::new();
+    for chunk in bits.chunks(4) {
+        if chunk.len() < 4 { break; }
+        bytes.push(chunk[0] | (chunk[1] << 2) | (chunk[2] << 4) | (chunk[3] << 6));
+    }
+    if bytes.len() < 4 { return None; }
+    let len = u32::from_be_bytes(bytes[..4].try_into().ok()?) as usize;
+    if len > bytes.len() - 4 { return None; }
+    Some(bytes[4..4 + len].to_vec())
+}
+
+impl StegoPlugin for Tweet280 {
+    fn name(&self) -> &str { "tweet280" }
+    fn extension(&self) -> &str { "tweet" }
+    fn encode(&self, data: &[u8]) -> Vec<u8> {
+        // Visible: "🔮" prefix + "✨" suffix, ~140 bytes capacity in 280 chars
+        zw_encode_platform(data, "🔮", "✨", 280)
+    }
+    fn decode(&self, carrier: &[u8]) -> Option<Vec<u8>> {
+        zw_decode_platform(carrier, "🔮", "✨")
+    }
+}
+
+impl StegoPlugin for DiscordBlock {
+    fn name(&self) -> &str { "discord" }
+    fn extension(&self) -> &str { "md" }
+    fn encode(&self, data: &[u8]) -> Vec<u8> {
+        // Discord code fence: ```\nhex data\n``` — 2000 char limit, ~980 bytes
+        let hex = hex::encode(data);
+        let mut out = String::with_capacity(hex.len() + 20);
+        out.push_str("```erdfa\n");
+        // Split into 76-char lines
+        for chunk in hex.as_bytes().chunks(76) {
+            out.push_str(std::str::from_utf8(chunk).unwrap());
+            out.push('\n');
+        }
+        out.push_str("```");
+        out.into_bytes()
+    }
+    fn decode(&self, carrier: &[u8]) -> Option<Vec<u8>> {
+        let text = std::str::from_utf8(carrier).ok()?;
+        let body = text.strip_prefix("```erdfa\n")?.strip_suffix("```")?;
+        let hex_str: String = body.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+        hex::decode(&hex_str).ok()
+    }
+}
+
+impl StegoPlugin for InstaCaption {
+    fn name(&self) -> &str { "instagram" }
+    fn extension(&self) -> &str { "insta" }
+    fn encode(&self, data: &[u8]) -> Vec<u8> {
+        // Instagram caption: 2200 chars, ZWC between hashtags
+        zw_encode_platform(data, "🎵 #hurrian #h6 ", " #nft #music", 2200)
+    }
+    fn decode(&self, carrier: &[u8]) -> Option<Vec<u8>> {
+        zw_decode_platform(carrier, "🎵 #hurrian #h6 ", " #nft #music")
+    }
+}
+
+impl StegoPlugin for TikTokDesc {
+    fn name(&self) -> &str { "tiktok" }
+    fn extension(&self) -> &str { "tiktok" }
+    fn encode(&self, data: &[u8]) -> Vec<u8> {
+        // TikTok description: 2200 chars, ZWC between visible text
+        zw_encode_platform(data, "♬ ", " #fyp #music #ancient", 2200)
+    }
+    fn decode(&self, carrier: &[u8]) -> Option<Vec<u8>> {
+        zw_decode_platform(carrier, "♬ ", " #fyp #music #ancient")
+    }
+}
+
+impl StegoPlugin for NftTile {
+    fn name(&self) -> &str { "nft-tile" }
+    fn extension(&self) -> &str { "png" }
+    fn encode(&self, data: &[u8]) -> Vec<u8> { BitPlane6.encode(data) }
+    fn decode(&self, carrier: &[u8]) -> Option<Vec<u8>> { BitPlane6.decode(carrier) }
+}
+
+// Base58 alphabet (Bitcoin/Solana)
+const B58: &[u8] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+impl StegoPlugin for SolanaMemo {
+    fn name(&self) -> &str { "solana-memo" }
+    fn extension(&self) -> &str { "memo" }
+    fn encode(&self, data: &[u8]) -> Vec<u8> {
+        // Memo format: "erdfa:" + base58(len:4 + data)
+        let mut payload = (data.len() as u32).to_be_bytes().to_vec();
+        payload.extend_from_slice(data);
+        let mut out = String::from("erdfa:");
+        // Simple base58 encode
+        let mut num = vec![0u8; 0];
+        for &byte in &payload {
+            let mut carry = byte as u32;
+            for d in num.iter_mut() {
+                carry += (*d as u32) << 8;
+                *d = (carry % 58) as u8;
+                carry /= 58;
+            }
+            while carry > 0 { num.push((carry % 58) as u8); carry /= 58; }
+        }
+        for &b in &payload { if b == 0 { out.push('1'); } else { break; } }
+        for &d in num.iter().rev() { out.push(B58[d as usize] as char); }
+        out.into_bytes()
+    }
+    fn decode(&self, carrier: &[u8]) -> Option<Vec<u8>> {
+        let text = std::str::from_utf8(carrier).ok()?;
+        let b58_str = text.strip_prefix("erdfa:")?;
+        // Base58 decode
+        let mut num: Vec<u8> = Vec::new();
+        for ch in b58_str.bytes() {
+            let val = B58.iter().position(|&b| b == ch)? as u32;
+            let mut carry = val;
+            for d in num.iter_mut() {
+                carry += (*d as u32) * 58;
+                *d = (carry & 0xFF) as u8;
+                carry >>= 8;
+            }
+            while carry > 0 { num.push((carry & 0xFF) as u8); carry >>= 8; }
+        }
+        // Leading '1's → leading zeros
+        let zeros = b58_str.bytes().take_while(|&b| b == b'1').count();
+        let mut result = vec![0u8; zeros];
+        result.extend(num.iter().rev());
+        if result.len() < 4 { return None; }
+        let len = u32::from_be_bytes(result[..4].try_into().ok()?) as usize;
+        if result.len() < 4 + len { return None; }
+        Some(result[4..4 + len].to_vec())
+    }
+}
+
 // ── Plugin chain (composable paths) ────────────────────────────
 
 /// A chain of stego plugins applied in sequence.
@@ -464,7 +651,14 @@ pub fn chain_from_config(config: &StegoConfig) -> StegoChain {
             "bitplane" | "bitplane6" | "bp6" => Box::new(BitPlane6),
             "hamming" | "hamming743" | "ham" => Box::new(Hamming743),
             "golay" | "golay24" | "golay24128" => Box::new(Golay24128),
+            "tweet" | "tweet280" | "twitter" => Box::new(Tweet280),
+            "discord" | "discord-block" => Box::new(DiscordBlock),
+            "instagram" | "insta" | "insta-caption" => Box::new(InstaCaption),
+            "tiktok" | "tiktok-desc" => Box::new(TikTokDesc),
+            "nft" | "nft-tile" => Box::new(NftTile),
+            "solana" | "sol" | "solana-memo" => Box::new(SolanaMemo),
             other => {
+                #[cfg(feature = "native")]
                 if let Some(path) = config.external.get(other) {
                     match ExternalPlugin::load(path) {
                         Ok(p) => Box::new(p),
@@ -477,6 +671,11 @@ pub fn chain_from_config(config: &StegoConfig) -> StegoChain {
                     eprintln!("warning: unknown stego plugin '{}', not in external map", other);
                     continue;
                 }
+                #[cfg(not(feature = "native"))]
+                {
+                    eprintln!("warning: external plugins not available in wasm, skipping '{}'", other);
+                    continue;
+                }
             }
         };
         chain = chain.push(plugin);
@@ -484,15 +683,11 @@ pub fn chain_from_config(config: &StegoConfig) -> StegoChain {
     chain
 }
 
-// ── External .so plugin via libloading ──────────────────────────
-//
-// C ABI contract — each cdylib exports:
-//   extern "C" fn stego_encode(data: *const u8, len: usize, out_len: *mut usize) -> *mut u8;
-//   extern "C" fn stego_decode(carrier: *const u8, len: usize, out_len: *mut usize) -> *mut u8;
-//   extern "C" fn stego_name() -> *const std::ffi::c_char;
-//   extern "C" fn stego_extension() -> *const std::ffi::c_char;
-//   extern "C" fn stego_free(ptr: *mut u8, len: usize);
+// ── External .so plugin via libloading (native only) ────────────
+#[cfg(feature = "native")]
+mod external_plugin {
 
+use super::StegoPlugin;
 use std::sync::Arc;
 
 /// A stego plugin loaded from a shared object (.so / .dylib).
@@ -563,6 +758,10 @@ impl StegoPlugin for ExternalPlugin {
     }
 }
 
+} // mod external_plugin
+#[cfg(feature = "native")]
+pub use external_plugin::ExternalPlugin;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -576,6 +775,12 @@ mod tests {
             Box::new(BitPlane6),
             Box::new(Hamming743),
             Box::new(Golay24128),
+            Box::new(Tweet280),
+            Box::new(DiscordBlock),
+            Box::new(InstaCaption),
+            Box::new(TikTokDesc),
+            Box::new(NftTile),
+            Box::new(SolanaMemo),
         ];
         for p in &plugins {
             let enc = p.encode(data);
