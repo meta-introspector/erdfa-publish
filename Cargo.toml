@@ -23,6 +23,7 @@ arrow = { version = "53", default-features = false, features = ["json"] }
 linux-perf-data = "0.6"
 anyhow = "1"
 lattice-safe-suite = "0.4"
+libloading = "0.8"
 
 [[bin]]
 name = "erdfa-cli"

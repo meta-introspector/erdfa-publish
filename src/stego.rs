@@ -259,7 +259,7 @@ pub struct StegoConfig {
 }
 
 /// Build a StegoChain from config, using built-in plugins.
-/// External .so plugins would be loaded via libloading (zos-server PluginDriver).
+/// External .so plugins loaded via libloading (zos-server PluginDriver pattern).
 pub fn chain_from_config(config: &StegoConfig) -> StegoChain {
     let mut chain = StegoChain::new();
     for name in &config.chain {
@@ -270,10 +270,18 @@ pub fn chain_from_config(config: &StegoConfig) -> StegoChain {
             "source" | "rs" | "rs-hex" => Box::new(RsHexComment),
             "bitplane" | "bitplane6" | "bp6" => Box::new(BitPlane6),
             other => {
-                // External plugin: would load from config.external[other] via libloading
-                // For now, skip unknown plugins with a warning
-                eprintln!("warning: unknown stego plugin '{}', skipping (load via zos-server plugin driver)", other);
-                continue;
+                if let Some(path) = config.external.get(other) {
+                    match ExternalPlugin::load(path) {
+                        Ok(p) => Box::new(p),
+                        Err(e) => {
+                            eprintln!("error loading plugin '{}' from {}: {}", other, path, e);
+                            continue;
+                        }
+                    }
+                } else {
+                    eprintln!("warning: unknown stego plugin '{}', not in external map", other);
+                    continue;
+                }
             }
         };
         chain = chain.push(plugin);
@@ -281,15 +289,84 @@ pub fn chain_from_config(config: &StegoConfig) -> StegoChain {
     chain
 }
 
-// ── C ABI for cdylib plugins ────────────────────────────────────
-// Each external plugin .so exports these two functions:
+// ── External .so plugin via libloading ──────────────────────────
 //
+// C ABI contract — each cdylib exports:
 //   extern "C" fn stego_encode(data: *const u8, len: usize, out_len: *mut usize) -> *mut u8;
 //   extern "C" fn stego_decode(carrier: *const u8, len: usize, out_len: *mut usize) -> *mut u8;
 //   extern "C" fn stego_name() -> *const std::ffi::c_char;
 //   extern "C" fn stego_extension() -> *const std::ffi::c_char;
-//
-// The zos-server PluginDriver loads these via libloading::Library::new(path).
+//   extern "C" fn stego_free(ptr: *mut u8, len: usize);
+
+use std::sync::Arc;
+
+/// A stego plugin loaded from a shared object (.so / .dylib).
+pub struct ExternalPlugin {
+    _lib: Arc<libloading::Library>,
+    name_str: String,
+    ext_str: String,
+    encode_fn: unsafe extern "C" fn(*const u8, usize, *mut usize) -> *mut u8,
+    decode_fn: unsafe extern "C" fn(*const u8, usize, *mut usize) -> *mut u8,
+    free_fn: unsafe extern "C" fn(*mut u8, usize),
+}
+
+// Safety: the loaded .so is pinned by Arc<Library> and function pointers are valid for its lifetime.
+unsafe impl Send for ExternalPlugin {}
+unsafe impl Sync for ExternalPlugin {}
+
+impl ExternalPlugin {
+    /// Load a stego plugin from a shared object path.
+    pub fn load(path: &str) -> Result<Self, String> {
+        let lib = unsafe { libloading::Library::new(path) }.map_err(|e| e.to_string())?;
+        unsafe {
+            let name_fn: libloading::Symbol<unsafe extern "C" fn() -> *const std::ffi::c_char> =
+                lib.get(b"stego_name").map_err(|e| e.to_string())?;
+            let ext_fn: libloading::Symbol<unsafe extern "C" fn() -> *const std::ffi::c_char> =
+                lib.get(b"stego_extension").map_err(|e| e.to_string())?;
+            let encode_fn: libloading::Symbol<unsafe extern "C" fn(*const u8, usize, *mut usize) -> *mut u8> =
+                lib.get(b"stego_encode").map_err(|e| e.to_string())?;
+            let decode_fn: libloading::Symbol<unsafe extern "C" fn(*const u8, usize, *mut usize) -> *mut u8> =
+                lib.get(b"stego_decode").map_err(|e| e.to_string())?;
+            let free_fn: libloading::Symbol<unsafe extern "C" fn(*mut u8, usize)> =
+                lib.get(b"stego_free").map_err(|e| e.to_string())?;
+
+            let name_str = std::ffi::CStr::from_ptr(name_fn()).to_string_lossy().into_owned();
+            let ext_str = std::ffi::CStr::from_ptr(ext_fn()).to_string_lossy().into_owned();
+
+            Ok(Self {
+                encode_fn: *encode_fn,
+                decode_fn: *decode_fn,
+                free_fn: *free_fn,
+                name_str,
+                ext_str,
+                _lib: Arc::new(lib),
+            })
+        }
+    }
+}
+
+impl StegoPlugin for ExternalPlugin {
+    fn name(&self) -> &str { &self.name_str }
+    fn extension(&self) -> &str { &self.ext_str }
+
+    fn encode(&self, data: &[u8]) -> Vec<u8> {
+        let mut out_len: usize = 0;
+        let ptr = unsafe { (self.encode_fn)(data.as_ptr(), data.len(), &mut out_len) };
+        if ptr.is_null() { return Vec::new(); }
+        let result = unsafe { std::slice::from_raw_parts(ptr, out_len) }.to_vec();
+        unsafe { (self.free_fn)(ptr, out_len); }
+        result
+    }
+
+    fn decode(&self, carrier: &[u8]) -> Option<Vec<u8>> {
+        let mut out_len: usize = 0;
+        let ptr = unsafe { (self.decode_fn)(carrier.as_ptr(), carrier.len(), &mut out_len) };
+        if ptr.is_null() { return None; }
+        let result = unsafe { std::slice::from_raw_parts(ptr, out_len) }.to_vec();
+        unsafe { (self.free_fn)(ptr, out_len); }
+        Some(result)
+    }
+}
 
 #[cfg(test)]
 mod tests {
