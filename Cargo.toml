@@ -61,3 +61,7 @@ path = "src/bin/ledger_to_nft.rs"
 [[bin]]
 name = "solana-ingest"
 path = "src/bin/solana_ingest.rs"
+
+[[bin]]
+name = "erdfa-mixer"
+path = "src/bin/erdfa_mixer.rs"

@@ -5,6 +5,7 @@ use std::io::Write;
 pub mod render;
 pub mod cft;
 pub mod privacy;
+pub mod mixer;
 pub mod stego;
 pub mod distribute;
 
