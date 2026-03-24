@@ -55,9 +55,11 @@ impl StegoPlugin for WavPhase {
     fn name(&self) -> &str { "wav-phase" }
     fn extension(&self) -> &str { "wav" }
     fn encode(&self, data: &[u8]) -> Vec<u8> {
+        use sha2::{Sha256, Digest};
+        let checksum: [u8; 32] = Sha256::digest(data).into();
         let mut out = Vec::new();
         out.extend_from_slice(b"RIFF");
-        out.extend_from_slice(&(data.len() as u32 + 40).to_le_bytes());
+        out.extend_from_slice(&(data.len() as u32 + 72).to_le_bytes());
         out.extend_from_slice(b"WAVEfmt ");
         out.extend_from_slice(&16u32.to_le_bytes());
         out.extend_from_slice(&1u16.to_le_bytes());
@@ -68,16 +70,22 @@ impl StegoPlugin for WavPhase {
         out.extend_from_slice(&8u16.to_le_bytes());
         out.extend_from_slice(b"data");
         out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        out.extend_from_slice(&checksum);
         out.extend_from_slice(data);
         out
     }
     fn decode(&self, c: &[u8]) -> Option<Vec<u8>> {
+        use sha2::{Sha256, Digest};
         let pos = c.windows(4).position(|w| w == b"data")?;
         let s = pos + 4;
-        if c.len() < s + 4 { return None; }
+        if c.len() < s + 36 { return None; }
         let len = u32::from_be_bytes(c[s..s + 4].try_into().ok()?) as usize;
-        if c.len() < s + 4 + len { return None; }
-        Some(c[s + 4..s + 4 + len].to_vec())
+        let checksum = &c[s + 4..s + 36];
+        if c.len() < s + 36 + len { return None; }
+        let data = &c[s + 36..s + 36 + len];
+        let actual: [u8; 32] = Sha256::digest(data).into();
+        if actual.as_slice() != checksum { return None; }
+        Some(data.to_vec())
     }
 }
 
@@ -264,6 +272,48 @@ mod tests {
         let dec = chain.decode(&enc).expect("config chain decode");
         assert_eq!(&dec, data);
     }
+
+    #[test]
+    fn lsb_roundtrip() {
+        let data = b"Hurrian Hymn h.6 bit-plane test";
+        let mut rgb = vec![128u8; PIXELS * 3];
+        lsb_embed(&mut rgb, data);
+        assert_eq!(&lsb_extract(&rgb, data.len()), data);
+    }
+
+    #[test]
+    fn lsb_rgba_roundtrip() {
+        let data = b"RGBA extract";
+        let mut rgb = vec![128u8; PIXELS * 3];
+        lsb_embed(&mut rgb, data);
+        let mut rgba = vec![255u8; PIXELS * 4];
+        for px in 0..PIXELS {
+            rgba[px*4] = rgb[px*3]; rgba[px*4+1] = rgb[px*3+1]; rgba[px*4+2] = rgb[px*3+2];
+        }
+        assert_eq!(&lsb_extract_rgba(&rgba, data.len()), data);
+    }
+
+    #[test]
+    fn nft7_roundtrip() {
+        let segs: Vec<(&str, &[u8])> = vec![("wav", b"RIFF fake"), ("midi", b"MThd")];
+        let payload = nft7_encode(&segs);
+        assert_eq!(&payload[..4], b"NFT7");
+        let decoded = nft7_decode(&payload).unwrap();
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].name, "wav");
+        assert_eq!(decoded[0].data, b"RIFF fake");
+    }
+
+    #[test]
+    fn split_join_nft7() {
+        let segs: Vec<(&str, &[u8])> = vec![("test", &[0xAB; 5000])];
+        let payload = nft7_encode(&segs);
+        let chunks = split_payload(&payload, 3);
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].len(), TILE_CAP);
+        let decoded = nft7_decode(&join_payload(&chunks)).unwrap();
+        assert_eq!(decoded[0].data, vec![0xAB; 5000]);
+    }
 }
 
 // ── Backward-compatible API (used by lib.rs ShardSet/Shard) ─────
@@ -292,23 +342,122 @@ pub fn decode(carrier: &[u8], ct: CarrierType) -> Option<Vec<u8>> {
     }
 }
 
-/// NFT7 segment encoding: pack named segments into a single payload.
+// ── 6-layer bit-plane LSB (real steganography for 512×512 RGB tiles) ──
+
+pub const TILE_W: usize = 512;
+pub const TILE_H: usize = 512;
+pub const PIXELS: usize = TILE_W * TILE_H;
+pub const PLANES: usize = 6;
+/// Max bytes per tile: 512×512 × 6 bits / 8 = 196,608 bytes
+pub const TILE_CAP: usize = PIXELS * PLANES / 8;
+
+/// Embed `data` into RGB buffer (3 bytes/pixel) using 6 bit planes.
+/// Layout per pixel: R0 G0 B0 R1 G1 B1, then next pixel.
+pub fn lsb_embed(rgb: &mut [u8], data: &[u8]) {
+    for (i, &byte) in data.iter().enumerate() {
+        if i >= TILE_CAP { break; }
+        for b in 0..8u8 {
+            let bit_idx = i * 8 + b as usize;
+            let px = bit_idx / PLANES;
+            let plane = bit_idx % PLANES;
+            if px >= PIXELS { return; }
+            let ch = plane % 3;
+            let bit_pos = plane / 3;
+            let idx = px * 3 + ch;
+            let val = (byte >> b) & 1;
+            rgb[idx] = (rgb[idx] & !(1 << bit_pos)) | (val << bit_pos);
+        }
+    }
+}
+
+/// Extract `length` bytes from RGB buffer (3 bytes/pixel).
+pub fn lsb_extract(rgb: &[u8], length: usize) -> Vec<u8> {
+    (0..length.min(TILE_CAP))
+        .map(|i| (0..8u8).map(|b| {
+            let bit_idx = i * 8 + b as usize;
+            let px = bit_idx / PLANES;
+            let plane = bit_idx % PLANES;
+            if px >= PIXELS { return 0; }
+            let idx = px * 3 + (plane % 3);
+            ((rgb[idx] >> (plane / 3)) & 1) << b
+        }).sum())
+        .collect()
+}
+
+/// Extract from RGBA buffer (4 bytes/pixel, Canvas getImageData).
+pub fn lsb_extract_rgba(rgba: &[u8], length: usize) -> Vec<u8> {
+    (0..length.min(TILE_CAP))
+        .map(|i| (0..8u8).map(|b| {
+            let bit_idx = i * 8 + b as usize;
+            let px = bit_idx / PLANES;
+            let plane = bit_idx % PLANES;
+            if px >= PIXELS { return 0; }
+            let idx = px * 4 + (plane % 3); // RGBA stride
+            ((rgba[idx] >> (plane / 3)) & 1) << b
+        }).sum())
+        .collect()
+}
+
+// ── NFT7 multi-segment container ──────────────────────────────────
+
+/// Named data segment in an NFT7 container.
+#[derive(Debug, Clone)]
+pub struct Nft7Segment {
+    pub name: String,
+    pub data: Vec<u8>,
+}
+
+/// Encode segments: `NFT7` magic + count(LE32) + [name_len(LE32) + name + data_len(LE32) + data]...
 pub fn nft7_encode(segments: &[(&str, &[u8])]) -> Vec<u8> {
     let mut out = Vec::new();
-    out.extend_from_slice(&(segments.len() as u32).to_be_bytes());
+    out.extend_from_slice(b"NFT7");
+    out.extend_from_slice(&(segments.len() as u32).to_le_bytes());
     for (name, data) in segments {
         let nb = name.as_bytes();
-        out.extend_from_slice(&(nb.len() as u16).to_be_bytes());
+        out.extend_from_slice(&(nb.len() as u32).to_le_bytes());
         out.extend_from_slice(nb);
-        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
         out.extend_from_slice(data);
     }
     out
 }
 
-/// Split a payload into N roughly equal chunks.
+/// Decode NFT7 → Vec<Nft7Segment>. Returns None on bad magic.
+pub fn nft7_decode(data: &[u8]) -> Option<Vec<Nft7Segment>> {
+    if data.len() < 8 || &data[0..4] != b"NFT7" { return None; }
+    let count = u32::from_le_bytes(data[4..8].try_into().ok()?) as usize;
+    let mut off = 8;
+    let mut segs = Vec::with_capacity(count);
+    for _ in 0..count {
+        if off + 4 > data.len() { break; }
+        let nl = u32::from_le_bytes(data[off..off+4].try_into().ok()?) as usize;
+        off += 4;
+        if off + nl + 4 > data.len() { break; }
+        let name = String::from_utf8_lossy(&data[off..off+nl]).into_owned();
+        off += nl;
+        let dl = u32::from_le_bytes(data[off..off+4].try_into().ok()?) as usize;
+        off += 4;
+        if off + dl > data.len() { break; }
+        segs.push(Nft7Segment { name, data: data[off..off+dl].to_vec() });
+        off += dl;
+    }
+    Some(segs)
+}
+
+/// Split payload across N tiles, each TILE_CAP bytes (zero-padded).
 pub fn split_payload(payload: &[u8], n: usize) -> Vec<Vec<u8>> {
-    if n == 0 { return vec![]; }
-    let chunk_size = (payload.len() + n - 1) / n;
-    payload.chunks(chunk_size.max(1)).map(|c| c.to_vec()).collect()
+    (0..n).map(|i| {
+        let start = i * TILE_CAP;
+        let mut chunk = vec![0u8; TILE_CAP];
+        if start < payload.len() {
+            let end = (start + TILE_CAP).min(payload.len());
+            chunk[..end - start].copy_from_slice(&payload[start..end]);
+        }
+        chunk
+    }).collect()
+}
+
+/// Reassemble payload from tile chunks.
+pub fn join_payload(chunks: &[Vec<u8>]) -> Vec<u8> {
+    chunks.iter().flat_map(|c| c.iter().copied()).collect()
 }
