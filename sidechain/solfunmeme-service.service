@@ -1,0 +1,18 @@
+[Unit]
+Description=SOLFUNMEME NFT Series Service
+Documentation=https://github.com/meta-introspector/erdfa-publish
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mdupont
+ExecStart=/home/mdupont/erdfa-publish/target/release/solfunmeme-service --data-dir /home/mdupont/.solfunmeme serve --bind 0.0.0.0:7780
+Restart=on-failure
+RestartSec=5
+Environment=HOME=/home/mdupont
+
+# Crawl timer runs separately via solfunmeme-crawl.service
+
+[Install]
+WantedBy=multi-user.target

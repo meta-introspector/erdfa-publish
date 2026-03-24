@@ -1,0 +1,9 @@
+[Unit]
+Description=SOLFUNMEME Daily Crawl Timer
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

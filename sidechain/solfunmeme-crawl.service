@@ -1,0 +1,9 @@
+[Unit]
+Description=SOLFUNMEME Transaction Crawl
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=mdupont
+Environment=HOME=/home/mdupont
+ExecStart=/bin/sh -c '/home/mdupont/erdfa-publish/target/release/solfunmeme-service --data-dir /home/mdupont/.solfunmeme crawl --depth 1 && /home/mdupont/erdfa-publish/target/release/solfunmeme-service --data-dir /home/mdupont/.solfunmeme rank && /home/mdupont/erdfa-publish/target/release/solfunmeme-service --data-dir /home/mdupont/.solfunmeme encode'

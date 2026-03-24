@@ -65,3 +65,7 @@ path = "src/bin/solana_ingest.rs"
 [[bin]]
 name = "erdfa-mixer"
 path = "src/bin/erdfa_mixer.rs"
+
+[[bin]]
+name = "solfunmeme-service"
+path = "src/bin/solfunmeme_service.rs"

@@ -6,6 +6,7 @@ pub mod render;
 pub mod cft;
 pub mod privacy;
 pub mod mixer;
+pub mod ingest;
 pub mod stego;
 pub mod distribute;
 
