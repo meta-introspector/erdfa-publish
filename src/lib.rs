@@ -5,6 +5,7 @@ use std::io::Write;
 pub mod render;
 pub mod cft;
 pub mod privacy;
+pub mod stego;
 
 /// DA51 CBOR tag (0xDA51 = 55889)
 const DASL_TAG: u64 = 55889;
@@ -150,6 +151,38 @@ impl ShardSet {
         let mut set = Self::new(name);
         for s in shards { set.add(s); }
         set
+    }
+
+    /// Pack all shard CBOR as NFT7 segments, split across N tiles.
+    /// Returns tile chunks ready for `stego::lsb_embed`.
+    pub fn to_nft7_tiles(&self, shards: &[Shard], n_tiles: usize) -> Vec<Vec<u8>> {
+        let segments: Vec<(&str, Vec<u8>)> = shards.iter()
+            .map(|s| (s.id.as_str(), s.to_cbor()))
+            .collect();
+        let seg_refs: Vec<(&str, &[u8])> = segments.iter()
+            .map(|(id, data)| (*id, data.as_slice()))
+            .collect();
+        let payload = stego::nft7_encode(&seg_refs);
+        stego::split_payload(&payload, n_tiles)
+    }
+}
+
+impl Shard {
+    /// Encode this shard's CBOR into a steganographic carrier.
+    pub fn to_carrier(&self, ct: stego::CarrierType) -> Vec<u8> {
+        stego::encode(&self.to_cbor(), ct)
+    }
+
+    /// Decode a shard from a steganographic carrier.
+    pub fn from_carrier(carrier: &[u8], ct: stego::CarrierType) -> Option<Self> {
+        let cbor = stego::decode(carrier, ct)?;
+        // Strip DA51 tag and deserialize
+        let val: ciborium::Value = ciborium::from_reader(&cbor[..]).ok()?;
+        let inner = match val {
+            ciborium::Value::Tag(55889, boxed) => *boxed,
+            other => other,
+        };
+        ciborium::Value::deserialized(&inner).ok()
     }
 }
 

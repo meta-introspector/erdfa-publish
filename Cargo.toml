@@ -22,6 +22,7 @@ parquet = { version = "53", default-features = false, features = ["arrow", "snap
 arrow = { version = "53", default-features = false, features = ["json"] }
 linux-perf-data = "0.6"
 anyhow = "1"
+lattice-safe-suite = "0.4"
 
 [[bin]]
 name = "erdfa-cli"
@@ -34,3 +35,7 @@ path = "src/bin/cbor2agda.rs"
 [[bin]]
 name = "cbor2lean4"
 path = "src/bin/cbor2lean4.rs"
+
+[[bin]]
+name = "erdfa-benchmark"
+path = "src/bin/benchmark.rs"

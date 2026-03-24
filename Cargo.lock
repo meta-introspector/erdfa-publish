@@ -506,6 +506,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dilithium-rs"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b0aa9ae3a1b700e0ac9f707cdff5c3893f4f11a3b1b317c5113a422ef785809"
+dependencies = [
+ "getrandom 0.2.17",
+ "sha2",
+ "sha3",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -520,11 +533,23 @@ dependencies = [
  "ciborium",
  "clap",
  "hex",
+ "lattice-safe-suite",
  "linux-perf-data",
  "parquet",
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "falcon-rs"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "704c2669b7636ec5a373d4ae2163704a22754cd0d994cdf574ac487c83e5f565"
+dependencies = [
+ "getrandom 0.2.17",
+ "libm",
+ "zeroize",
 ]
 
 [[package]]
@@ -672,6 +697,52 @@ checksum = "b49715b7073f385ba4bc528e5747d02e66cb39c6146efb66b781f131f0fb399c"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "keccak"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb26cec98cce3a3d96cbb7bced3c4b16e3d13f27ec56dbd62cbc8f39cfb9d653"
+dependencies = [
+ "cpufeatures",
+]
+
+[[package]]
+name = "lattice-kyber"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "602d7ee77b8854f55e3c8acba88f84ef97fd3cf838ff229a0193c82f1bd4233b"
+dependencies = [
+ "getrandom 0.2.17",
+ "sha3",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "lattice-safe-suite"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d13ce63ba80bf1bba35f3cb152a3a7f6f2ab25f08583bf8e9a4473b41091c6c0"
+dependencies = [
+ "dilithium-rs",
+ "falcon-rs",
+ "lattice-kyber",
+ "lattice-slh-dsa",
+]
+
+[[package]]
+name = "lattice-slh-dsa"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4f99d3ef9863a4445c1b77825e4534cf3c36e9ee707eff6ffc1f1e772add166"
+dependencies = [
+ "getrandom 0.2.17",
+ "sha2",
+ "sha3",
+ "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -1056,6 +1127,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha3"
+version = "0.10.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75872d278a8f37ef87fa0ddbda7802605cb18344497949862c0d4dcb291eba60"
+dependencies = [
+ "digest",
+ "keccak",
+]
+
+[[package]]
 name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1078,6 +1159,12 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
+
+[[package]]
+name = "subtle"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "syn"
@@ -1376,6 +1463,26 @@ name = "zerocopy-derive"
 version = "0.8.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e8bc7269b54418e7aeeef514aa68f8690b8c0489a06b0136e5f57c4c5ccab89"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "zeroize"
+version = "1.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b97154e67e32c85465826e8bcc1c59429aaaf107c1e4a9e53c8d8ccd5eff88d0"
+dependencies = [
+ "zeroize_derive",
+]
+
+[[package]]
+name = "zeroize_derive"
+version = "1.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85a5b4158499876c763cb03bc4e49185d3cccbabb15b33c627f7884f43db852e"
 dependencies = [
  "proc-macro2",
  "quote",

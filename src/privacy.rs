@@ -181,6 +181,53 @@ impl PrivacyShard {
         ciborium::into_writer(&tagged, &mut buf).unwrap();
         buf
     }
+
+    /// Canonical bytes for signing (merkle_root || id || field count).
+    pub fn signable_bytes(&self) -> Vec<u8> {
+        format!("{}:{}:{}", self.merkle_root, self.id, self.fields.len()).into_bytes()
+    }
+}
+
+// ── Post-quantum signatures (ML-DSA-44) ─────────────────────────
+
+/// A PrivacyShard with a post-quantum signature.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SignedPrivacyShard {
+    pub shard: PrivacyShard,
+    pub signature: Vec<u8>,
+    pub public_key: Vec<u8>,
+}
+
+impl SignedPrivacyShard {
+    /// Sign a PrivacyShard with ML-DSA-44.
+    pub fn sign(shard: PrivacyShard) -> Result<Self, String> {
+        use lattice_safe_suite::dilithium::{MlDsaKeyPair, ML_DSA_44};
+        let kp = MlDsaKeyPair::generate(ML_DSA_44).map_err(|e| e.to_string())?;
+        let msg = shard.signable_bytes();
+        let sig = kp.sign(&msg, b"erdfa-privacy-v1").map_err(|e| e.to_string())?;
+        Ok(Self {
+            shard,
+            signature: sig.as_bytes().to_vec(),
+            public_key: kp.public_key().to_vec(),
+        })
+    }
+
+    /// Verify the PQ signature.
+    pub fn verify(&self) -> bool {
+        use lattice_safe_suite::dilithium::{MlDsaKeyPair, MlDsaSignature, ML_DSA_44};
+        let msg = self.shard.signable_bytes();
+        let sig = MlDsaSignature::from_slice(&self.signature);
+        MlDsaKeyPair::verify(&self.public_key, &sig, &msg, b"erdfa-privacy-v1", ML_DSA_44)
+    }
+
+    /// Encode as DA51-tagged CBOR.
+    pub fn to_cbor(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        let val = ciborium::Value::serialized(self).unwrap();
+        let tagged = ciborium::Value::Tag(55889, Box::new(val));
+        ciborium::into_writer(&tagged, &mut buf).unwrap();
+        buf
+    }
 }
 
 #[cfg(test)]
