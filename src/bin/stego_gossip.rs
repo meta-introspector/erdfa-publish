@@ -301,12 +301,27 @@ fn post_to_solana(state: &Arc<Mutex<GossipState>>, rpc: &str) {
         let memo_str = String::from_utf8_lossy(&encoded);
 
         // Post via solana CLI (subprocess — avoids SDK dep)
+        // Self-transfer with memo: send dust to ourselves
+        let pubkey = std::process::Command::new("solana")
+            .args(["--url", rpc, "address"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+
+        if pubkey.is_empty() {
+            eprintln!("✗ cannot get solana pubkey");
+            continue;
+        }
+
         let status = std::process::Command::new("solana")
             .args(["transfer", "--allow-unfunded-recipient",
                    "--with-memo", &memo_str,
                    "--url", rpc,
-                   "11111111111111111111111111111111", // system program (self-transfer)
-                   "0.000001"]) // dust amount
+                   &pubkey, // self-transfer
+                   "0.000001"])
             .output();
 
         match status {
