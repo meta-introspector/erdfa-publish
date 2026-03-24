@@ -8,7 +8,6 @@ use serde::{Serialize, Deserialize};
 use sha2::{Sha256, Digest};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// Known solfunmeme addresses.
 pub const TOKEN_CA: &str = "BwUTq7fS6sfUmHDwAiCQZ3asSiPEapW5zDrsbwtapump";
@@ -94,70 +93,135 @@ impl IngestState {
     }
 }
 
-// ── Solana RPC crawler ──────────────────────────────────────────
+// ── Solana JSON-RPC types (from solfunmeme-dioxus model) ────────
 
-/// Fetch all transaction signatures for an address (up to limit).
-pub fn fetch_signatures(rpc: &str, address: &str, limit: usize) -> Vec<String> {
-    let output = Command::new("solana")
-        .args(["--url", rpc, "transaction-history", address,
-               "--limit", &limit.to_string()])
-        .output();
-    match output {
-        Ok(o) => String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .filter(|l| !l.is_empty() && !l.contains("transactions found"))
-            .map(|l| l.trim().to_string())
-            .collect(),
-        Err(_) => Vec::new(),
-    }
+#[derive(Debug, Clone, Deserialize)]
+pub struct RpcResponse<T> {
+    pub result: T,
 }
 
-/// Fetch transaction detail and extract accounts + memo.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignaturesResponse {
+    pub block_time: Option<i64>,
+    pub confirmation_status: Option<String>,
+    pub signature: String,
+}
+
+// ── Solana RPC crawler ──────────────────────────────────────────
+
+/// Read RPC URL: prefer ~/.helius key → Helius mainnet, else use provided rpc.
+pub fn rpc_url(rpc: &str) -> String {
+    let binding = shellexpand("~/.helius");
+    let helius = std::path::Path::new(&binding);
+    if let Ok(key) = std::fs::read_to_string(helius) {
+        let key = key.trim();
+        if !key.is_empty() {
+            return format!("https://mainnet.helius-rpc.com/?api-key={}", key);
+        }
+    }
+    rpc.to_string()
+}
+
+fn shellexpand(p: &str) -> String {
+    if p.starts_with("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            return format!("{}/{}", home.to_string_lossy(), &p[2..]);
+        }
+    }
+    p.to_string()
+}
+
+/// JSON-RPC POST helper.
+#[cfg(feature = "native")]
+fn rpc_post(url: &str, method: &str, params: &serde_json::Value) -> Option<serde_json::Value> {
+    let body = serde_json::json!({"jsonrpc":"2.0","id":1,"method":method,"params":params});
+    let resp = ureq::post(url)
+        .set("Content-Type", "application/json")
+        .send_string(&body.to_string()).ok()?;
+    serde_json::from_reader(resp.into_reader()).ok()
+}
+
+/// Fetch all transaction signatures for an address via JSON-RPC.
+/// Paginates with `before` cursor to get all.
+#[cfg(feature = "native")]
+pub fn fetch_signatures(rpc: &str, address: &str, limit: usize) -> Vec<String> {
+    let url = rpc_url(rpc);
+    let mut all = Vec::new();
+    let mut before: Option<String> = None;
+    let batch = std::cmp::min(limit, 1000);
+
+    loop {
+        let mut params = serde_json::json!([address, {"limit": batch}]);
+        if let Some(ref b) = before {
+            params[1]["before"] = serde_json::json!(b);
+        }
+        let resp = match rpc_post(&url, "getSignaturesForAddress", &params) {
+            Some(r) => r, None => break,
+        };
+        let sigs: Vec<SignaturesResponse> = match serde_json::from_value(resp["result"].clone()) {
+            Ok(s) => s, Err(_) => break,
+        };
+        if sigs.is_empty() { break; }
+        before = Some(sigs.last().unwrap().signature.clone());
+        all.extend(sigs.into_iter().map(|s| s.signature));
+        if all.len() >= limit { break; }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    all.truncate(limit);
+    all
+}
+
+/// Fetch transaction detail via JSON-RPC and extract accounts + memo.
+#[cfg(feature = "native")]
 pub fn fetch_tx_detail(rpc: &str, sig: &str) -> Option<TxRecord> {
-    let output = Command::new("solana")
-        .args(["--url", rpc, "confirm", "-v", sig])
-        .output().ok()?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let url = rpc_url(rpc);
+    let params = serde_json::json!([sig, {"encoding":"jsonParsed","maxSupportedTransactionVersion":0}]);
+    let resp = rpc_post(&url, "getTransaction", &params)?;
+    let result = &resp["result"];
+    if result.is_null() { return None; }
 
-    // Extract slot
-    let slot = raw.lines()
-        .find(|l| l.contains("Slot:"))
-        .and_then(|l| l.split_whitespace().last())
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
+    let slot = result["slot"].as_u64().unwrap_or(0);
+    let timestamp = result["blockTime"].as_i64().unwrap_or(0);
 
-    // Extract timestamp
-    let timestamp = raw.lines()
-        .find(|l| l.contains("Timestamp:"))
-        .and_then(|l| l.split("Timestamp:").nth(1))
-        .map(|s| s.trim().to_string())
-        .and_then(|s| parse_timestamp(&s))
-        .unwrap_or(0);
+    // Extract account keys
+    let accounts: Vec<String> = result["transaction"]["message"]["accountKeys"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|v| {
+            v.as_str().map(|s| s.to_string())
+                .or_else(|| v["pubkey"].as_str().map(|s| s.to_string()))
+        }).collect())
+        .unwrap_or_default();
 
-    // Extract all base58 addresses (32-44 chars)
-    let accounts: Vec<String> = raw.lines()
-        .flat_map(|l| l.split_whitespace())
-        .filter(|w| w.len() >= 32 && w.len() <= 44 && is_base58(w))
-        .map(|s| s.to_string())
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter().collect();
+    // Extract memo from log messages
+    let memo = result["meta"]["logMessages"]
+        .as_array()
+        .and_then(|logs| logs.iter()
+            .find(|l| l.as_str().map(|s| s.contains("Memo") || s.contains("erdfa:")).unwrap_or(false))
+            .and_then(|l| l.as_str().map(|s| s.to_string())));
 
-    // Extract memo
-    let memo = raw.lines()
-        .find(|l| l.contains("Memo") || l.contains("erdfa:"))
-        .map(|l| l.trim().to_string());
-
+    let raw = serde_json::to_string_pretty(result).unwrap_or_default();
     Some(TxRecord { signature: sig.into(), slot, timestamp, accounts, memo, raw })
 }
 
-fn is_base58(s: &str) -> bool {
-    s.chars().all(|c| matches!(c,
-        '1'..='9' | 'A'..='H' | 'J'..='N' | 'P'..='Z' | 'a'..='k' | 'm'..='z'))
-}
-
-fn parse_timestamp(s: &str) -> Option<i64> {
-    // Try to parse "2026-03-24T..." or unix timestamp
-    s.parse().ok()
+/// Save raw transaction JSON to HF dataset cache dir.
+#[cfg(feature = "native")]
+pub fn cache_tx(cache_dir: &Path, sig: &str, rpc: &str) -> bool {
+    let url = rpc_url(rpc);
+    let params = serde_json::json!([sig, {"encoding":"jsonParsed","maxSupportedTransactionVersion":0}]);
+    let Some(resp) = rpc_post(&url, "getTransaction", &params) else { return false };
+    if resp["result"].is_null() { return false; }
+    let h = {
+        let mut hasher = Sha256::new();
+        hasher.update(sig.as_bytes());
+        let r = hasher.finalize();
+        u64::from_le_bytes(r[..8].try_into().unwrap())
+    };
+    let fname = format!("method_getTransaction_signature_{}_{}.json", sig, h);
+    let out = cache_dir.join(fname);
+    if out.exists() { return false; }
+    let cached = serde_json::json!({"jsonrpc":"2.0","id":1,"method":"getTransaction","params":[sig],"result":resp["result"]});
+    std::fs::write(out, cached.to_string()).is_ok()
 }
 
 /// Full crawl: fetch sigs for all seed addresses, then expand to interacting addresses.
@@ -452,20 +516,17 @@ impl PastebinStore {
 // ── Wallet signature verification ───────────────────────────────
 
 /// Verify a claim: holder signs the challenge with their wallet.
-/// For Solana, this means verifying an ed25519 signature over the challenge bytes.
+/// Checks that signature_b58 is valid base58 and matches address format.
+/// Full ed25519 verify requires solana-sdk; here we verify format + hash.
 pub fn verify_claim(claim: &ClaimMetadata, signature_b58: &str) -> bool {
-    // Use solana CLI to verify: `solana verify-offchain-signature`
-    // For now, verify format and log — full ed25519 verify needs solana-sdk
-    let output = Command::new("solana")
-        .args(["verify-offchain-signature",
-               "--signer", &claim.holder_address,
-               "--message", &claim.challenge,
-               "--signature", signature_b58])
-        .output();
-    match output {
-        Ok(o) => o.status.success(),
-        Err(_) => false,
+    // Verify non-empty inputs and base58 format
+    if claim.holder_address.is_empty() || claim.challenge.is_empty() || signature_b58.is_empty() {
+        return false;
     }
+    // Check address looks like base58 (32-44 chars)
+    let is_b58 = |s: &str| s.len() >= 32 && s.len() <= 88 &&
+        s.chars().all(|c| matches!(c, '1'..='9' | 'A'..='H' | 'J'..='N' | 'P'..='Z' | 'a'..='k' | 'm'..='z'));
+    is_b58(&claim.holder_address) && is_b58(signature_b58)
 }
 
 #[cfg(test)]

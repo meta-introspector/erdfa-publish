@@ -1,0 +1,17 @@
+[service]
+name = "solfunmeme-service"
+port = 7780
+protocol = "tcp"
+description = "Solfunmeme Stego Service - Solana txn crawler, Fibonacci tiers, NFT series, pastebin"
+
+[nginx]
+enabled = true
+path = "/solfunmeme"
+proxy_pass = "http://127.0.0.1:7780"
+
+[systemd]
+enabled = true
+user = true
+exec_start = "%h/erdfa-publish/target/release/solfunmeme-service serve"
+working_directory = "%h/.solfunmeme"
+restart = "always"

@@ -13,7 +13,7 @@ readme = "README.md"
 
 [features]
 default = ["native"]
-native = ["dep:parquet", "dep:arrow", "dep:linux-perf-data", "dep:libloading", "dep:lattice-safe-suite", "dep:clap"]
+native = ["dep:parquet", "dep:arrow", "dep:linux-perf-data", "dep:libloading", "dep:lattice-safe-suite", "dep:clap", "dep:ureq"]
 wasm = []
 
 [dependencies]
@@ -29,6 +29,7 @@ linux-perf-data = { version = "0.6", optional = true }
 anyhow = "1"
 lattice-safe-suite = { version = "0.4", optional = true }
 libloading = { version = "0.8", optional = true }
+ureq = { version = "2", optional = true }
 
 [[bin]]
 name = "erdfa-cli"

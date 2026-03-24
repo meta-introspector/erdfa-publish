@@ -49,6 +49,18 @@ enum Cmd {
     },
     /// Show current state
     Status,
+    /// Batch-crawl: fetch missing tx details from HF dataset sigs (daily systemd timer)
+    BatchCrawl {
+        /// HF dataset directory with getSignaturesForAddress JSON files
+        #[arg(long, default_value = "~/.solfunmeme/hf-dataset")]
+        hf_dir: String,
+        /// Max transactions to fetch per run (daily budget)
+        #[arg(long, default_value = "95000")]
+        budget: usize,
+        /// Requests per second (leave headroom below 10)
+        #[arg(long, default_value = "8")]
+        rate: usize,
+    },
 }
 
 #[cfg(feature = "native")]
@@ -244,6 +256,89 @@ fn main() {
                 }
                 None => eprintln!("No state yet — run 'crawl' first"),
             }
+        }
+
+        Cmd::BatchCrawl { hf_dir, budget, rate } => {
+            let hf = expand_dir(&hf_dir);
+            if !hf.exists() {
+                eprintln!("HF dataset dir not found: {}", hf.display());
+                eprintln!("Clone it: git clone https://huggingface.co/datasets/introspector/solfunmeme {}", hf.display());
+                return;
+            }
+
+            // 1. Collect existing tx sigs
+            let mut have: std::collections::HashSet<String> = std::collections::HashSet::new();
+            for entry in std::fs::read_dir(&hf).unwrap().flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("method_getTransaction_signature_") {
+                    // Extract sig from filename: method_getTransaction_signature_{SIG}_{HASH}.json
+                    if let Some(rest) = name.strip_prefix("method_getTransaction_signature_") {
+                        if let Some(sig) = rest.rsplit_once('_').map(|(s,_)| s) {
+                            have.insert(sig.to_string());
+                        }
+                    }
+                }
+            }
+            eprintln!("◎ batch-crawl: {} existing tx details", have.len());
+
+            // 2. Extract all sigs from getSignaturesForAddress files
+            let mut all_sigs: Vec<String> = Vec::new();
+            let mut seen = std::collections::HashSet::new();
+            for entry in std::fs::read_dir(&hf).unwrap().flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !name.starts_with("method_getSignaturesForAddress_") { continue; }
+                let Ok(data) = std::fs::read(entry.path()) else { continue };
+                let Ok(v): Result<serde_json::Value, _> = serde_json::from_slice(&data) else { continue };
+                if let Some(arr) = v["result"].as_array() {
+                    for item in arr {
+                        if let Some(sig) = item["signature"].as_str() {
+                            if seen.insert(sig.to_string()) {
+                                all_sigs.push(sig.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            eprintln!("  {} unique sigs in dataset", all_sigs.len());
+
+            // 3. Filter to missing
+            let missing: Vec<&str> = all_sigs.iter()
+                .filter(|s| !have.contains(s.as_str()))
+                .map(|s| s.as_str())
+                .take(budget)
+                .collect();
+            eprintln!("  {} missing, fetching {} (budget)", all_sigs.len() - have.len(), missing.len());
+
+            if missing.is_empty() {
+                eprintln!("◎ All caught up!");
+                return;
+            }
+
+            // 4. Fetch at rate limit
+            let mut fetched = 0usize;
+            let mut errors = 0usize;
+            let start = std::time::Instant::now();
+            for (i, sig) in missing.iter().enumerate() {
+                if cache_tx(&hf, sig, &args.rpc) {
+                    fetched += 1;
+                } else {
+                    errors += 1;
+                }
+                if (i + 1) % rate == 0 {
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+                if (i + 1) % 1000 == 0 {
+                    let elapsed = start.elapsed().as_secs_f64();
+                    let rps = (i + 1) as f64 / elapsed;
+                    let eta = (missing.len() - i - 1) as f64 / rps / 60.0;
+                    eprintln!("  [{}/{}] fetched={} errors={} {:.1}/s eta={:.1}min",
+                        i + 1, missing.len(), fetched, errors, rps, eta);
+                }
+            }
+            let elapsed = start.elapsed().as_secs_f64();
+            eprintln!("◎ Done: {} fetched, {} errors in {:.1}min",
+                fetched, errors, elapsed / 60.0);
+            eprintln!("  Total tx details: {}", have.len() + fetched);
         }
     }
 }
