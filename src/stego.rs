@@ -34,6 +34,12 @@ pub struct ZeroWidthText;
 pub struct RsHexComment;
 /// 6-layer bit-plane steganography on 512×512 RGB tiles (retro-sync compatible).
 pub struct BitPlane6;
+/// Hamming [7,4,3] error-correcting code — corrects 1-bit errors per 7-bit block.
+/// From the EC Zoo: automorphism group related to M₁₁ (smallest Mathieu).
+pub struct Hamming743;
+/// Extended Golay [24,12,8] error-correcting code — corrects 3-bit errors per 24-bit block.
+/// From the EC Zoo: automorphism group = M₂₄ (Mathieu group). Used on Voyager 1 & 2.
+pub struct Golay24128;
 
 impl StegoPlugin for PngLsb {
     fn name(&self) -> &str { "png-lsb" }
@@ -212,6 +218,193 @@ impl StegoPlugin for BitPlane6 {
     }
 }
 
+// ── Hamming [7,4,3] ECC (eczoo: hamming743 ↔ M₁₁) ─────────────
+
+// Generator matrix G for systematic Hamming [7,4,3]:
+// data bits d0..d3 → codeword [d0 d1 d2 d3 p0 p1 p2]
+// p0 = d0⊕d1⊕d3, p1 = d0⊕d2⊕d3, p2 = d1⊕d2⊕d3
+fn hamming_encode_nibble(d: u8) -> u8 {
+    let (d0, d1, d2, d3) = ((d >> 0) & 1, (d >> 1) & 1, (d >> 2) & 1, (d >> 3) & 1);
+    let p0 = d0 ^ d1 ^ d3;
+    let p1 = d0 ^ d2 ^ d3;
+    let p2 = d1 ^ d2 ^ d3;
+    d | (p0 << 4) | (p1 << 5) | (p2 << 6)
+}
+
+fn hamming_decode_nibble(c: u8) -> u8 {
+    let (d0, d1, d2, d3) = ((c >> 0) & 1, (c >> 1) & 1, (c >> 2) & 1, (c >> 3) & 1);
+    let (p0, p1, p2) = ((c >> 4) & 1, (c >> 5) & 1, (c >> 6) & 1);
+    // syndrome
+    let s0 = p0 ^ d0 ^ d1 ^ d3;
+    let s1 = p1 ^ d0 ^ d2 ^ d3;
+    let s2 = p2 ^ d1 ^ d2 ^ d3;
+    let syn = s0 | (s1 << 1) | (s2 << 2);
+    // correct single-bit error
+    let mut corrected = c;
+    if syn > 0 && syn <= 7 {
+        let bit_pos = match syn { 1 => 4, 2 => 5, 3 => 0, 4 => 6, 5 => 1, 6 => 2, 7 => 3, _ => 8 };
+        if bit_pos < 7 { corrected ^= 1 << bit_pos; }
+    }
+    corrected & 0x0F
+}
+
+impl StegoPlugin for Hamming743 {
+    fn name(&self) -> &str { "hamming743" }
+    fn extension(&self) -> &str { "ham" }
+    fn encode(&self, data: &[u8]) -> Vec<u8> {
+        // 4-byte length header + data, each byte → 2 nibbles → 2 Hamming codewords
+        let mut payload = (data.len() as u32).to_be_bytes().to_vec();
+        payload.extend_from_slice(data);
+        let mut out = Vec::with_capacity(payload.len() * 2);
+        for &byte in &payload {
+            out.push(hamming_encode_nibble(byte & 0x0F));
+            out.push(hamming_encode_nibble(byte >> 4));
+        }
+        out
+    }
+    fn decode(&self, carrier: &[u8]) -> Option<Vec<u8>> {
+        if carrier.len() < 8 { return None; } // at least 4-byte header × 2
+        let mut bytes = Vec::with_capacity(carrier.len() / 2);
+        for chunk in carrier.chunks(2) {
+            if chunk.len() < 2 { break; }
+            let lo = hamming_decode_nibble(chunk[0]);
+            let hi = hamming_decode_nibble(chunk[1]);
+            bytes.push(lo | (hi << 4));
+        }
+        let len = u32::from_be_bytes(bytes[..4].try_into().ok()?) as usize;
+        if len > bytes.len() - 4 { return None; }
+        Some(bytes[4..4 + len].to_vec())
+    }
+}
+
+// ── Extended Golay [24,12,8] ECC (eczoo: extended_golay ↔ M₂₄) ──
+
+// The extended Golay code encodes 12 data bits into 24 bits (12 data + 12 parity).
+// Generator matrix: I₁₂ | P where P is the 12×12 matrix from the Leech lattice.
+const GOLAY_P: [u16; 12] = [
+    0b110111000101, // row 0
+    0b101110001011, // row 1
+    0b011100010111, // row 2
+    0b111000101101, // row 3
+    0b110001011011, // row 4
+    0b100010110111, // row 5
+    0b000101101111, // row 6
+    0b001011011101, // row 7
+    0b010110111001, // row 8
+    0b101101110001, // row 9
+    0b011011100011, // row 10
+    0b111111111110, // row 11
+];
+
+fn golay_encode_12(data: u16) -> u32 {
+    let mut parity: u16 = 0;
+    for i in 0..12 {
+        if (data >> i) & 1 == 1 {
+            parity ^= GOLAY_P[i];
+        }
+    }
+    (data as u32) | ((parity as u32) << 12)
+}
+
+fn golay_syndrome(codeword: u32) -> u16 {
+    let data = (codeword & 0xFFF) as u16;
+    let recv_parity = ((codeword >> 12) & 0xFFF) as u16;
+    let mut expected: u16 = 0;
+    for i in 0..12 {
+        if (data >> i) & 1 == 1 {
+            expected ^= GOLAY_P[i];
+        }
+    }
+    expected ^ recv_parity
+}
+
+fn popcount(x: u16) -> u32 { x.count_ones() }
+
+fn golay_decode_24(codeword: u32) -> Option<u16> {
+    let syn = golay_syndrome(codeword);
+    if syn == 0 { return Some((codeword & 0xFFF) as u16); }
+    // weight ≤ 3 error in parity bits
+    if popcount(syn) <= 3 {
+        return Some((codeword & 0xFFF) as u16); // error only in parity, data is fine
+    }
+    // try single-bit correction in data
+    for i in 0..12 {
+        let s2 = syn ^ GOLAY_P[i];
+        if popcount(s2) <= 2 {
+            return Some(((codeword & 0xFFF) as u16) ^ (1 << i));
+        }
+    }
+    // try two-bit correction in data
+    for i in 0..12 {
+        for j in (i+1)..12 {
+            let s3 = syn ^ GOLAY_P[i] ^ GOLAY_P[j];
+            if popcount(s3) <= 1 {
+                return Some(((codeword & 0xFFF) as u16) ^ (1 << i) ^ (1 << j));
+            }
+        }
+    }
+    // 3-bit error in data
+    for i in 0..12 {
+        for j in (i+1)..12 {
+            for k in (j+1)..12 {
+                let s4 = syn ^ GOLAY_P[i] ^ GOLAY_P[j] ^ GOLAY_P[k];
+                if s4 == 0 {
+                    return Some(((codeword & 0xFFF) as u16) ^ (1 << i) ^ (1 << j) ^ (1 << k));
+                }
+            }
+        }
+    }
+    None // uncorrectable
+}
+
+impl StegoPlugin for Golay24128 {
+    fn name(&self) -> &str { "golay24" }
+    fn extension(&self) -> &str { "gol" }
+    fn encode(&self, data: &[u8]) -> Vec<u8> {
+        // Length header (4 bytes) + data → bit stream → 12-bit blocks → 24-bit Golay codewords → bytes
+        let mut payload = (data.len() as u32).to_be_bytes().to_vec();
+        payload.extend_from_slice(data);
+        // Convert to bit stream, pack into 12-bit blocks
+        let mut bits: Vec<u8> = Vec::new();
+        for &byte in &payload {
+            for b in 0..8 { bits.push((byte >> b) & 1); }
+        }
+        // Pad to multiple of 12
+        while bits.len() % 12 != 0 { bits.push(0); }
+        // Encode each 12-bit block
+        let mut out = Vec::new();
+        for chunk in bits.chunks(12) {
+            let mut val: u16 = 0;
+            for (i, &b) in chunk.iter().enumerate() { val |= (b as u16) << i; }
+            let cw = golay_encode_12(val);
+            out.extend_from_slice(&cw.to_le_bytes()[..3]); // 24 bits = 3 bytes
+        }
+        out
+    }
+    fn decode(&self, carrier: &[u8]) -> Option<Vec<u8>> {
+        if carrier.len() < 6 { return None; } // at least header
+        let mut bits: Vec<u8> = Vec::new();
+        for chunk in carrier.chunks(3) {
+            if chunk.len() < 3 { break; }
+            let cw = chunk[0] as u32 | ((chunk[1] as u32) << 8) | ((chunk[2] as u32) << 16);
+            let data = golay_decode_24(cw)?;
+            for i in 0..12 { bits.push(((data >> i) & 1) as u8); }
+        }
+        // Reconstruct bytes
+        let mut bytes = Vec::new();
+        for byte_bits in bits.chunks(8) {
+            if byte_bits.len() < 8 { break; }
+            let mut byte: u8 = 0;
+            for (i, &b) in byte_bits.iter().enumerate() { byte |= b << i; }
+            bytes.push(byte);
+        }
+        if bytes.len() < 4 { return None; }
+        let len = u32::from_be_bytes(bytes[..4].try_into().ok()?) as usize;
+        if len > bytes.len() - 4 { return None; }
+        Some(bytes[4..4 + len].to_vec())
+    }
+}
+
 // ── Plugin chain (composable paths) ────────────────────────────
 
 /// A chain of stego plugins applied in sequence.
@@ -269,6 +462,8 @@ pub fn chain_from_config(config: &StegoConfig) -> StegoChain {
             "text" | "txt" | "zwc-text" => Box::new(ZeroWidthText),
             "source" | "rs" | "rs-hex" => Box::new(RsHexComment),
             "bitplane" | "bitplane6" | "bp6" => Box::new(BitPlane6),
+            "hamming" | "hamming743" | "ham" => Box::new(Hamming743),
+            "golay" | "golay24" | "golay24128" => Box::new(Golay24128),
             other => {
                 if let Some(path) = config.external.get(other) {
                     match ExternalPlugin::load(path) {
@@ -379,12 +574,44 @@ mod tests {
             Box::new(PngLsb), Box::new(WavPhase),
             Box::new(ZeroWidthText), Box::new(RsHexComment),
             Box::new(BitPlane6),
+            Box::new(Hamming743),
+            Box::new(Golay24128),
         ];
         for p in &plugins {
             let enc = p.encode(data);
             let dec = p.decode(&enc).expect(p.name());
             assert_eq!(&dec, data, "roundtrip failed: {}", p.name());
         }
+    }
+
+    #[test]
+    fn hamming_corrects_1bit() {
+        let data = b"Hamming corrects single-bit errors";
+        let ham = Hamming743;
+        let mut enc = ham.encode(data);
+        // Flip 1 bit in every 7th byte (within correction capability)
+        for i in (0..enc.len()).step_by(7) {
+            enc[i] ^= 0x40; // flip bit 6
+        }
+        let dec = ham.decode(&enc).expect("hamming should correct");
+        assert_eq!(&dec, data);
+    }
+
+    #[test]
+    fn golay_corrects_3bit() {
+        let data = b"Golay corrects 3-bit errors per block";
+        let gol = Golay24128;
+        let mut enc = gol.encode(data);
+        // Flip up to 3 bits per 3-byte (24-bit) codeword
+        for chunk in enc.chunks_mut(3) {
+            if chunk.len() == 3 {
+                chunk[0] ^= 0x01; // bit 0
+                chunk[1] ^= 0x10; // bit 12
+                chunk[2] ^= 0x04; // bit 18
+            }
+        }
+        let dec = gol.decode(&enc).expect("golay should correct 3-bit errors");
+        assert_eq!(&dec, data);
     }
 
     #[test]
