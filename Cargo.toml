@@ -45,3 +45,7 @@ path = "src/bin/cbor2lean4.rs"
 [[bin]]
 name = "erdfa-benchmark"
 path = "src/bin/benchmark.rs"
+
+[[bin]]
+name = "campaign-planner"
+path = "src/bin/campaign_planner.rs"
