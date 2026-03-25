@@ -58,6 +58,19 @@ enum Cmd {
         #[arg(long, default_value = "./shards")]
         out: String,
     },
+    /// Generate erdfa URL for an action (opens in browser or prints)
+    Url {
+        /// Action: vote, submit, status, tiers, dao, paste, p2p
+        action: String,
+        /// Extra key=value params
+        params: Vec<String>,
+    },
+    /// Open the dioxus app at a specific route
+    Open {
+        /// Route: /, /dao, /paste, /p2p, /plugins
+        #[arg(default_value = "/")]
+        route: String,
+    },
 }
 
 #[cfg(feature = "native")]
@@ -192,8 +205,45 @@ fn main() {
             eprintln!("✓ {} → {} shards in {}/", file, shards.len(), out);
             eprintln!("  Merkle root: {}", root);
         }
+
+        Cmd::Url { action, params } => {
+            let base = &cli.endpoint;
+            let kv: Vec<String> = params.iter()
+                .map(|p| p.replace('=', "="))
+                .collect();
+            let query = if kv.is_empty() { String::new() } else { format!("?{}", kv.join("&")) };
+
+            let url = match action.as_str() {
+                "vote" => format!("{}/paste{}", base, query),
+                "submit" => format!("{}/paste{}", base, query),
+                "status" => format!("{}/status", base),
+                "tiers" => format!("{}/tiers", base),
+                "dao" | "paste" | "p2p" | "plugins" => {
+                    // Dioxus frontend routes
+                    let web = base.replace("/solfunmeme", "/dioxus");
+                    format!("{}/{}{}", web, action, query)
+                }
+                _ => format!("{}/{}{}", base, action, query),
+            };
+            println!("{}", url);
+        }
+
+        Cmd::Open { route } => {
+            let web = cli.endpoint.replace("/solfunmeme", "/dioxus");
+            let url = format!("{}{}", web, route);
+            eprintln!("Opening {}", url);
+            #[cfg(target_os = "linux")]
+            { let _ = std::process::Command::new("xdg-open").arg(&url).spawn(); }
+            #[cfg(target_os = "macos")]
+            { let _ = std::process::Command::new("open").arg(&url).spawn(); }
+            println!("{}", url);
+        }
     }
 }
 
 #[cfg(not(feature = "native"))]
 fn main() { eprintln!("requires native feature"); }
+
+// Note: URL encoding support via erdfa-clean
+// Pass state as URL params: ?vote=yea&holder=PUBKEY&endpoint=http://...
+// Or as erdfa URL: erdfa convert "https://solana.solfunmeme.com/solfunmeme/paste?vote=yea"
