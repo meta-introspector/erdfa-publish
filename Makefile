@@ -104,3 +104,9 @@ sf-prove-systemd:
 
 sf-prove-timer:
 	systemctl --user enable --now solfunmeme-prove.timer
+
+sf-collect:
+	$(BIN) collect-votes
+
+sf-pipeline:
+	$(BIN) analyze && $(BIN) identify && $(BIN) prove && $(BIN) collect-votes
