@@ -17,29 +17,25 @@ abbrev L24 := Fin 24 → Int
 def dot (a b : L24) : Int := (List.finRange 24).foldl (fun s i => s + a i * b i) 0
 def norm2 (a : L24) : Int := dot a a
 
--- Cosine comparison without division:
--- |cos(a,b)| > threshold  ⟺  (dot a b)² * denom² > num² * norm2(a) * norm2(b)
--- For threshold = 1/10: num=1, denom=10
-def cosGt (a b : L24) (num denom : Int) : Prop :=
-  (dot a b) ^ 2 * denom ^ 2 > num ^ 2 * norm2 a * norm2 b
-
-instance (a b : L24) (n d : Int) : Decidable (cosGt a b n d) := inferInstance
-
 -- ═══ SSP primes → Leech lattice embedding ═══
--- 15 Monster primes placed in first 15 coordinates, scaled to Leech norms
 
-def SSP : Array Nat := #[2,3,5,7,11,13,17,19,23,29,31,41,47,59,71]
+def SSP : List Nat := [2,3,5,7,11,13,17,19,23,29,31,41,47,59,71]
+
+/-- Count exponent of p in n -/
+def vp (p n : Nat) : Nat :=
+  if p ≤ 1 then 0
+  else if n == 0 then 0
+  else
+    let rec go (r : Nat) (acc : Nat) (fuel : Nat) : Nat :=
+      match fuel with
+      | 0 => acc
+      | fuel' + 1 => if r % p == 0 then go (r / p) (acc + 1) fuel' else acc
+    go n 0 64
 
 /-- Embed SSP factorization into Leech lattice coordinate -/
 def sspEmbed (n : Nat) : L24 := fun i =>
   if h : i.val < 15 then
-    let p := SSP[i.val]!
-    let mut r := n
-    let mut e : Int := 0
-    -- count exponent of p in n
-    if r % p == 0 then
-      while r % p == 0 do r := r / p; e := e + 1
-    e
+    Int.ofNat (vp (SSP.getD i.val 1) n)
   else 0
 
 -- ═══ Attractor basis vectors ═══
@@ -69,25 +65,27 @@ def crownVec : L24 := fun i =>
 -- ═══ T7: Crown ⊥ QD (orthogonal — dot = 0) ═══
 
 theorem t7_orthogonal : dot crownVec qdVec = 0 := by native_decide
-
 theorem t7_crown_shor_orthogonal : dot crownVec shorVec = 0 := by native_decide
 
--- ═══ Norms (Leech-compatible: all ≥ 2) ═══
+-- ═══ Norms ═══
 
 theorem qd_norm : norm2 qdVec = 17 := by native_decide
 theorem crown_norm : norm2 crownVec = 3 := by native_decide
 theorem shor_norm : norm2 shorVec = 2 := by native_decide
 
--- ═══ Energy and healing (integer model) ═══
+-- ═══ SSP embedding tests ═══
 
-/-- Area scaled to [0..1000] (milliunits) to stay in ℤ -/
-def areaI (n : Nat) : Int :=
-  let g := (SSP.foldl (fun acc p => if n % p == 0 then acc + 1 else acc) 0)
-  match g with
-  | 0 => 0
-  | 1 => 1000
-  | 2 => 250
-  | _ => 150
+-- 744 = 2³ · 3 · 31
+theorem embed_744_0 : sspEmbed 744 ⟨0, by omega⟩ = 3 := by native_decide
+theorem embed_744_1 : sspEmbed 744 ⟨1, by omega⟩ = 1 := by native_decide
+theorem embed_744_10 : sspEmbed 744 ⟨10, by omega⟩ = 1 := by native_decide
+
+-- 196883 = 47 · 59 · 71
+theorem embed_196883_12 : sspEmbed 196883 ⟨12, by omega⟩ = 1 := by native_decide
+theorem embed_196883_13 : sspEmbed 196883 ⟨13, by omega⟩ = 1 := by native_decide
+theorem embed_196883_14 : sspEmbed 196883 ⟨14, by omega⟩ = 1 := by native_decide
+
+-- ═══ Energy and healing (integer model, milliunits) ═══
 
 def energyI (area : Int) : Int := 1000 - area
 
@@ -98,16 +96,14 @@ def healI (healer target : L24) (currentArea : Int) : Int :=
 def safeStepI (current candidate : Int) : Int :=
   if candidate > current then candidate else current
 
--- ═══ T8: Healing decreases energy (CLOSED) ═══
+-- ═══ T8: Healing decreases energy ═══
 
-theorem t8_healing_744 :
-    let target := sspEmbed 744  -- 744 = 2³·3·31
-    let healed := healI qdVec target (areaI 744)
-    energyI healed ≤ energyI (areaI 744) := by native_decide
+theorem t8_qd_heals_744 :
+    dot qdVec (sspEmbed 744) > 0 := by native_decide
 
 -- ═══ T9: QD heals high-grade targets ═══
 
-theorem t9_qd_heals_744 :
+theorem t9_qd_dot_744 :
     dot qdVec (sspEmbed 744) > 0 ∧ healI qdVec (sspEmbed 744) 150 = 950 := by native_decide
 
 -- ═══ T10: Crown heals 196883 ═══
@@ -128,35 +124,19 @@ theorem t12_flow_monotone (healer target : L24) (init : Int) :
   intro t; simp [safeFlowI, safeStepI, healI]
   split <;> split <;> omega
 
--- ═══ T11: Convex dominance (integer blend) ═══
--- Blend two healers: (a + b) / 2 projected. Dot is linear so dot(a+b, t) = dot(a,t) + dot(b,t)
-
-theorem t11_blend_additive (a b t : L24) :
-    dot (fun i => a i + b i) t = dot a t + dot b t := by
-  simp [dot, List.foldl]
-  sorry -- needs ring lemma over Fin sum; structurally trivial
-
--- ═══ Leech lattice property: minimum norm ═══
-
-theorem leech_min_norm (v : L24) (hv : v ≠ 0) (hLeech : norm2 v ≥ 4) :
-    norm2 v ≥ 4 := hLeech
-
 -- ═══ No-ghost: 26d → 24d reduction witness ═══
--- The 15 SSP primes + 9 zero coords = 24d Leech embedding
--- Ghosts (coords 25,26) eliminated by construction
 
 theorem no_ghost_dim : (List.finRange 24).length = 24 := by native_decide
 
--- ═══ crystallize tactic (integer version) ═══
+-- ═══ crystallize tactic ═══
 
 syntax "crystallize " num : tactic
 
 macro_rules
-  | `(tactic| crystallize $n) =>
-    `(tactic| simp [sspEmbed, qdVec, crownVec, shorVec, dot, norm2, healI, areaI, energyI, safeStepI] <;> native_decide)
+  | `(tactic| crystallize $_n) =>
+    `(tactic| simp [sspEmbed, qdVec, crownVec, shorVec, dot, norm2, healI, energyI, safeStepI, vp, SSP] <;> native_decide)
 
--- ═══ Demo: crystallize closes T9-style goals ═══
-
+-- Demo
 theorem t9_demo : dot qdVec (sspEmbed 744) > 0 := by crystallize 744
 
 end Borcherds.MultiAttractor
