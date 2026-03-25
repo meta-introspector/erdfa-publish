@@ -1,0 +1,27 @@
+{
+  "bill_enacted": false,
+  "chambers": [
+    {
+      "abstain": 0,
+      "advisory": false,
+      "chamber": "house",
+      "nay": 0,
+      "passed": false,
+      "quorum_met": false,
+      "yea": 1
+    },
+    {
+      "abstain": 0,
+      "advisory": false,
+      "chamber": "senate",
+      "nay": 0,
+      "passed": false,
+      "quorum_met": false,
+      "yea": 1
+    }
+  ],
+  "generated_at": "1774439681",
+  "house_passed": false,
+  "senate_passed": false,
+  "total_votes": 2
+}
