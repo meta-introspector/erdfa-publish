@@ -58,6 +58,18 @@ enum Cmd {
         #[arg(long, default_value = "8")]
         rate: usize,
     },
+    /// Collect votes from feeds (file inbox, AMQP, HTTP) and verify + tally
+    CollectVotes {
+        /// Proofs directory (reads credentials.json, writes tally.json)
+        #[arg(long, default_value = "~/.solfunmeme/proofs")]
+        proofs_dir: String,
+        /// Vote inbox directory (agents drop signed vote JSON files here)
+        #[arg(long, default_value = "~/.solfunmeme/votes/inbox")]
+        inbox: String,
+        /// AMQP URL (optional, for RabbitMQ feed)
+        #[arg(long, default_value = "amqp://guest:guest@127.0.0.1:5672")]
+        amqp_url: String,
+    },
     /// Run Lean4 proof verification + mint NFT credentials + generate vote schedule
     Prove {
         /// Proofs directory
@@ -433,6 +445,161 @@ fn main() {
             for (kind, count) in &counts {
                 eprintln!("  {:20} {}", kind, count);
             }
+            eprintln!("◎ Wrote {}", out_path.display());
+        }
+
+        Cmd::CollectVotes { proofs_dir, inbox, amqp_url } => {
+            let dir = expand_dir(&proofs_dir);
+            let inbox_dir = expand_dir(&inbox);
+            std::fs::create_dir_all(&inbox_dir).ok();
+
+            // 1. Load credentials
+            let cred_path = dir.join("credentials.json");
+            if !cred_path.exists() {
+                eprintln!("No credentials.json — run 'prove' first");
+                return;
+            }
+            let cred_data: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(&cred_path).unwrap()).unwrap();
+            let valid_holders: std::collections::HashSet<String> = cred_data["credential_list"]
+                .as_array().unwrap_or(&vec![])
+                .iter()
+                .filter_map(|c| c["holder"].as_str().map(|s| s.to_string()))
+                .collect();
+            eprintln!("◎ collect-votes: {} credentialed holders", valid_holders.len());
+
+            // 2. Collect from file inbox
+            let mut votes: Vec<serde_json::Value> = Vec::new();
+            let mut invalid = 0usize;
+
+            if inbox_dir.exists() {
+                for entry in std::fs::read_dir(&inbox_dir).unwrap().flatten() {
+                    if !entry.file_name().to_string_lossy().ends_with(".json") { continue; }
+                    let Ok(data) = std::fs::read_to_string(entry.path()) else { continue };
+                    let Ok(v): Result<serde_json::Value, _> = serde_json::from_str(&data) else { invalid += 1; continue };
+
+                    // Validate: holder must have credential
+                    let holder = v["holder"].as_str().unwrap_or("");
+                    if !valid_holders.contains(holder) { invalid += 1; continue; }
+
+                    // Validate: choice must be yea/nay/abstain
+                    let choice = v["choice"].as_str().unwrap_or("");
+                    if !["yea", "nay", "abstain"].contains(&choice) { invalid += 1; continue; }
+
+                    votes.push(v);
+                }
+            }
+            eprintln!("  File inbox: {} valid, {} invalid", votes.len(), invalid);
+
+            // 3. Try AMQP (RabbitMQ) — poll via management HTTP API
+            let amqp_votes = {
+                // Try management API to get messages from solfunmeme-votes queue
+                let mgmt_url = "http://127.0.0.1:15672/api/queues/%2f/solfunmeme-votes/get";
+                let body = serde_json::json!({"count": 1000, "ackmode": "ack_requeue_false", "encoding": "auto"});
+                match ureq::post(mgmt_url)
+                    .set("Authorization", "Basic Z3Vlc3Q6Z3Vlc3Q=") // guest:guest
+                    .set("Content-Type", "application/json")
+                    .send_string(&body.to_string()) {
+                    Ok(resp) => {
+                        let text = resp.into_string().unwrap_or_default();
+                        let msgs: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap_or_default();
+                        let mut amqp_v = Vec::new();
+                        for msg in &msgs {
+                            let payload = msg["payload"].as_str().unwrap_or("{}");
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) {
+                                let holder = v["holder"].as_str().unwrap_or("");
+                                if valid_holders.contains(holder) {
+                                    amqp_v.push(v);
+                                }
+                            }
+                        }
+                        eprintln!("  AMQP: {} votes from solfunmeme-votes queue", amqp_v.len());
+                        amqp_v
+                    }
+                    Err(_) => {
+                        eprintln!("  AMQP: not available (management API not responding)");
+                        vec![]
+                    }
+                }
+            };
+            votes.extend(amqp_votes);
+
+            // 4. Deduplicate by holder (last vote wins)
+            let mut by_holder: std::collections::HashMap<String, serde_json::Value> = std::collections::HashMap::new();
+            for v in &votes {
+                if let Some(h) = v["holder"].as_str() {
+                    by_holder.insert(h.to_string(), v.clone());
+                }
+            }
+            eprintln!("  Total: {} unique votes (from {} raw)", by_holder.len(), votes.len());
+
+            // 5. Tally per chamber
+            let mut tally: std::collections::HashMap<String, (usize, usize, usize)> = std::collections::HashMap::new();
+            for (holder, vote) in &by_holder {
+                // Find chamber from credentials
+                let empty_vec = vec![];
+                let chamber = cred_data["credential_list"].as_array().unwrap_or(&empty_vec)
+                    .iter()
+                    .find(|c| c["holder"].as_str() == Some(holder))
+                    .and_then(|c| c["chamber"].as_str())
+                    .unwrap_or("unknown");
+                let choice = vote["choice"].as_str().unwrap_or("abstain");
+                let entry = tally.entry(chamber.to_string()).or_insert((0, 0, 0));
+                match choice {
+                    "yea" => entry.0 += 1,
+                    "nay" => entry.1 += 1,
+                    _ => entry.2 += 1,
+                }
+            }
+
+            // 6. Resolve per chamber
+            let mut results: Vec<serde_json::Value> = Vec::new();
+            for (chamber, (yea, nay, abstain)) in &tally {
+                let (size, majority) = match chamber.as_str() {
+                    "senate" => (100, 51),
+                    "house" => (500, 251),
+                    "lobby" => (1000, 0), // advisory
+                    _ => (0, 0),
+                };
+                let quorum_met = (yea + nay + abstain) * 2 > size;
+                let passed = quorum_met && *yea >= majority && yea > nay;
+                results.push(serde_json::json!({
+                    "chamber": chamber,
+                    "yea": yea, "nay": nay, "abstain": abstain,
+                    "quorum_met": quorum_met,
+                    "passed": passed,
+                    "advisory": chamber == "lobby",
+                }));
+            }
+
+            // Bill passes if senate AND house pass
+            let senate_pass = results.iter().any(|r| r["chamber"] == "senate" && r["passed"] == true);
+            let house_pass = results.iter().any(|r| r["chamber"] == "house" && r["passed"] == true);
+            let bill_enacted = senate_pass && house_pass;
+
+            let output = serde_json::json!({
+                "generated_at": chrono_timestamp(),
+                "total_votes": by_holder.len(),
+                "chambers": results,
+                "bill_enacted": bill_enacted,
+                "senate_passed": senate_pass,
+                "house_passed": house_pass,
+            });
+
+            let out_path = dir.join("tally.json");
+            std::fs::write(&out_path, serde_json::to_string_pretty(&output).unwrap()).unwrap();
+
+            eprintln!("\n◎ Vote Tally");
+            for r in &results {
+                eprintln!("  {:8} yea={} nay={} abstain={} quorum={} {}",
+                    r["chamber"].as_str().unwrap_or("?"),
+                    r["yea"], r["nay"], r["abstain"],
+                    r["quorum_met"],
+                    if r["advisory"] == true { "(advisory)" }
+                    else if r["passed"] == true { "PASSED" }
+                    else { "FAILED" });
+            }
+            eprintln!("  Bill: {}", if bill_enacted { "ENACTED" } else { "NOT ENACTED" });
             eprintln!("◎ Wrote {}", out_path.display());
         }
 
