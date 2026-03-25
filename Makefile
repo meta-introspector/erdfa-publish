@@ -110,3 +110,12 @@ sf-collect:
 
 sf-pipeline:
 	$(BIN) analyze && $(BIN) identify && $(BIN) prove && $(BIN) collect-votes
+
+# ── CLI ───────────────────────────────────────────────────────────
+
+sf-cli-build:
+	nix develop -c cargo build --release --bin solfunmeme_cli
+
+sf-cli-install:
+	cp target/release/solfunmeme_cli ~/.local/bin/solfunmeme-cli
+	@echo "✓ Installed to ~/.local/bin/solfunmeme-cli"

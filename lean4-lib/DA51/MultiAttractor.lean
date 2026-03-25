@@ -133,8 +133,7 @@ theorem t12_flow_monotone (healer target : L24) (init : Int) :
 
 theorem t11_blend_additive (a b t : L24) :
     dot (fun i => a i + b i) t = dot a t + dot b t := by
-  simp [dot, List.foldl]
-  sorry -- needs ring lemma over Fin sum; structurally trivial
+  simp [dot, Finset.sum_add_distrib, mul_add]
 
 -- ═══ Leech lattice property: minimum norm ═══
 
