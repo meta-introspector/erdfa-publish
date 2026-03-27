@@ -85,3 +85,8 @@ required-features = ["native"]
 name = "zkperf-services"
 path = "src/bin/zkperf_services.rs"
 required-features = ["native"]
+
+[[bin]]
+name = "shard-dedup"
+path = "src/bin/shard_dedup.rs"
+required-features = ["native"]
