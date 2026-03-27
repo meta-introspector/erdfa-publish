@@ -146,6 +146,7 @@ fn chrono_timestamp() -> String {
 #[cfg(feature = "native")]
 fn main() {
     use erdfa_publish::ingest::*;
+    use erdfa_publish::privacy::{PrivacyShard, SignedPrivacyShard};
 
     let args = Args::parse();
     let data_dir = expand_dir(&args.data_dir);
@@ -208,6 +209,8 @@ fn main() {
             eprintln!("  POST /claim         — verify wallet signature");
             eprintln!("  GET  /status        — service status");
             eprintln!("  GET  /tiers         — Fibonacci tier info");
+            eprintln!("  POST /telemetry     — collect frontend errors");
+            eprintln!("  GET  /metrics       — Prometheus metrics");
 
             let listener = TcpListener::bind(&bind).expect("bind");
             for stream in listener.incoming().flatten() {
@@ -237,6 +240,141 @@ fn main() {
                 let body_str = String::from_utf8_lossy(&body).to_string();
 
                 let (status, response) = match (method, path) {
+                    // CORS preflight for mesh peers
+                    ("OPTIONS", _) => {
+                        let http = format!(
+                            "HTTP/1.1 204 No Content\r\n\
+                             Access-Control-Allow-Origin: *\r\n\
+                             Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
+                             Access-Control-Allow-Headers: Content-Type\r\n\
+                             Access-Control-Max-Age: 86400\r\n\
+                             Content-Length: 0\r\n\r\n"
+                        );
+                        let _ = (&stream).write_all(http.as_bytes());
+                        continue;
+                    }
+
+                    ("GET", "/mesh") => {
+                        let peers = serde_json::json!({
+                            "node": "self-hosted",
+                            "peers": [
+                                "https://meta-introspector.github.io/solfunmeme-dioxus/",
+                                "https://solfunmeme-dioxus.pages.dev/",
+                                "https://solfunmeme-dioxus.vercel.app/",
+                                "https://introspector-solfunmeme-dioxus.hf.space/",
+                                "https://solfunmeme.netlify.app/",
+                                "https://solfunmeme-dioxus.onrender.com/",
+                                "https://solana.solfunmeme.com/dioxus/"
+                            ]
+                        });
+                        ("200 OK", serde_json::to_string(&peers).unwrap())
+                    }
+
+                    // Mesh log storage — encrypted telemetry shared across nodes
+                    ("POST", "/mesh/logs") => {
+                        let mesh_dir = format!("{}/.solfunmeme/mesh-logs", std::env::var("HOME").unwrap_or_default());
+                        let _ = std::fs::create_dir_all(&mesh_dir);
+                        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+
+                        // Parse log entry and create Merkle-committed privacy shard
+                        let pairs: Vec<(String, String)> = if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body_str) {
+                            v.as_object().map(|o| o.iter().map(|(k,v)| (k.clone(), v.to_string())).collect()).unwrap_or_default()
+                        } else {
+                            vec![("raw".into(), body_str.clone())]
+                        };
+
+                        let shard_id = format!("mesh-{}", ts);
+                        let pshard = PrivacyShard::from_pairs(&shard_id, &pairs, vec!["mesh-log".into()]);
+                        let signed = SignedPrivacyShard::sign(pshard);
+
+                        let (hash, stored) = match &signed {
+                            Ok(s) => {
+                                let cbor = s.shard.to_cbor();
+                                let hash = format!("{:x}", <sha2::Sha256 as sha2::Digest>::digest(&cbor));
+                                let fname = format!("{}/{}_{}.cbor", mesh_dir, ts, &hash[..8]);
+                                let _ = std::fs::write(&fname, &cbor);
+                                // Also store JSON for readability
+                                let jname = format!("{}/{}_{}.json", mesh_dir, ts, &hash[..8]);
+                                let meta = serde_json::json!({
+                                    "merkle_root": hex::encode(&s.shard.merkle_root),
+                                    "fields": s.shard.fields,
+                                    "tags": s.shard.tags,
+                                    "signed": !s.signature.is_empty(),
+                                });
+                                let _ = std::fs::write(&jname, serde_json::to_string_pretty(&meta).unwrap());
+                                (hash, true)
+                            }
+                            Err(_) => {
+                                // Fallback: store raw
+                                use sha2::{Sha256, Digest};
+                                let hash = format!("{:x}", Sha256::digest(body_str.as_bytes()));
+                                let fname = format!("{}/{}_{}.json", mesh_dir, ts, &hash[..8]);
+                                let _ = std::fs::write(&fname, &body_str);
+                                (hash, true)
+                            }
+                        };
+
+                        eprintln!("  🕸️ mesh log: {} ({} bytes, merkle-committed)", &hash[..8], body_str.len());
+                        // Stego-encode the log into a PNG
+                        let stego_data = erdfa_publish::stego::encode(body_str.as_bytes(), erdfa_publish::stego::CarrierType::Png);
+                        let stego_path = format!("{}/{}_{}.png", mesh_dir, ts, &hash[..8]);
+                        let _ = std::fs::write(&stego_path, &stego_data);
+                        let resp = serde_json::json!({"stored": hash, "ts": ts, "merkle": signed.is_ok()});
+                        ("201 Created", serde_json::to_string(&resp).unwrap())
+                    }
+
+                    ("GET", "/mesh/logs") => {
+                        let mesh_dir = format!("{}/.solfunmeme/mesh-logs", std::env::var("HOME").unwrap_or_default());
+                        let mut entries = Vec::new();
+                        if let Ok(rd) = std::fs::read_dir(&mesh_dir) {
+                            for e in rd.flatten() {
+                                if e.path().extension().map(|x| x == "json").unwrap_or(false) {
+                                    if let Ok(data) = std::fs::read_to_string(e.path()) {
+                                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data) {
+                                            entries.push(v);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        let resp = serde_json::json!({"count": entries.len(), "logs": entries});
+                        ("200 OK", serde_json::to_string(&resp).unwrap())
+                    }
+
+                    // Mesh peer registration — nodes announce their WG pubkey + endpoint
+                    ("POST", "/mesh/peers") => {
+                        let peers_file = format!("{}/.solfunmeme/wireguard/peers.json", std::env::var("HOME").unwrap_or_default());
+                        let mut peers: Vec<serde_json::Value> = std::fs::read_to_string(&peers_file).ok()
+                            .and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+                        if let Ok(peer) = serde_json::from_str::<serde_json::Value>(&body_str) {
+                            // Deduplicate by pubkey
+                            let pubkey = peer["pubkey"].as_str().unwrap_or("").to_string();
+                            peers.retain(|p| p["pubkey"].as_str() != Some(&pubkey));
+                            peers.push(peer);
+                            let _ = std::fs::write(&peers_file, serde_json::to_string_pretty(&peers).unwrap());
+                            eprintln!("  🕸️ mesh peer registered: {} ({} total)", &pubkey[..8.min(pubkey.len())], peers.len());
+                        }
+                        let resp = serde_json::json!({"peers": peers.len()});
+                        ("200 OK", serde_json::to_string(&resp).unwrap())
+                    }
+
+                    ("GET", "/mesh/peers") => {
+                        let peers_file = format!("{}/.solfunmeme/wireguard/peers.json", std::env::var("HOME").unwrap_or_default());
+                        let peers: Vec<serde_json::Value> = std::fs::read_to_string(&peers_file).ok()
+                            .and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+                        let pubkey = std::fs::read_to_string(
+                            format!("{}/.solfunmeme/wireguard/publickey", std::env::var("HOME").unwrap_or_default())
+                        ).unwrap_or_default().trim().to_string();
+                        let resp = serde_json::json!({
+                            "node": "self-hosted",
+                            "address": "10.71.0.1",
+                            "pubkey": pubkey,
+                            "port": 51871,
+                            "peers": peers,
+                        });
+                        ("200 OK", serde_json::to_string_pretty(&resp).unwrap())
+                    }
+
                     ("GET", "/status") => {
                         let s = state.as_ref().map(|s| serde_json::json!({
                             "transactions": s.transactions.len(),
@@ -298,6 +436,42 @@ fn main() {
                             }
                             Err(_) => ("400 Bad Request", r#"{"error":"invalid json"}"#.into()),
                         }
+                    }
+
+                    ("POST", "/telemetry") => {
+                        // Log frontend errors, forward to stdout for otel collector
+                        let entries: Vec<serde_json::Value> = serde_json::from_str(&body_str).unwrap_or_default();
+                        for e in &entries {
+                            eprintln!("  ⚡ [{}] {}", e["level"].as_str().unwrap_or("?"), e["msg"].as_str().unwrap_or(""));
+                        }
+                        let resp = serde_json::json!({"received": entries.len()});
+                        ("200 OK", serde_json::to_string(&resp).unwrap())
+                    }
+
+                    ("GET", "/metrics") => {
+                        // Prometheus exposition format
+                        let tx_count = state.as_ref().map(|s| s.transactions.len()).unwrap_or(0);
+                        let holder_count = state.as_ref().map(|s| s.holders.len()).unwrap_or(0);
+                        let paste_count = pastebin.list().len();
+                        let body = format!(
+                            "# HELP solfunmeme_transactions_total Total crawled transactions\n\
+                             # TYPE solfunmeme_transactions_total gauge\n\
+                             solfunmeme_transactions_total {}\n\
+                             # HELP solfunmeme_holders_total Total token holders\n\
+                             # TYPE solfunmeme_holders_total gauge\n\
+                             solfunmeme_holders_total {}\n\
+                             # HELP solfunmeme_pastes_total Total paste submissions\n\
+                             # TYPE solfunmeme_pastes_total gauge\n\
+                             solfunmeme_pastes_total {}\n",
+                            tx_count, holder_count, paste_count
+                        );
+                        // Return as text/plain for Prometheus
+                        let http = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{}",
+                            body.len(), body
+                        );
+                        let _ = (&stream).write_all(http.as_bytes());
+                        continue;
                     }
 
                     _ => ("404 Not Found", r#"{"error":"not found"}"#.into()),

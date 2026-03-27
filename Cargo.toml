@@ -29,7 +29,7 @@ linux-perf-data = { version = "0.6", optional = true }
 anyhow = "1"
 lattice-safe-suite = { version = "0.4", optional = true }
 libloading = { version = "0.8", optional = true }
-ureq = { version = "2", optional = true }
+ureq = { version = "2", optional = true, features = ["json"] }
 
 [[bin]]
 name = "erdfa-cli"
@@ -70,3 +70,18 @@ path = "src/bin/erdfa_mixer.rs"
 [[bin]]
 name = "solfunmeme-service"
 path = "src/bin/solfunmeme_service.rs"
+
+[[bin]]
+name = "zkperf-verify"
+path = "src/bin/zkperf_verify.rs"
+required-features = ["native"]
+
+[[bin]]
+name = "solfunmeme"
+path = "src/bin/solfunmeme_cli.rs"
+required-features = ["native"]
+
+[[bin]]
+name = "zkperf-services"
+path = "src/bin/zkperf_services.rs"
+required-features = ["native"]

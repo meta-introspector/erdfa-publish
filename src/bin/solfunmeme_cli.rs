@@ -30,47 +30,62 @@ struct Cli {
 enum Cmd {
     /// Authenticate with API key from web signup
     Login {
-        /// API key (from https://solana.solfunmeme.com/dioxus/accounts)
         #[arg(long)]
         key: Option<String>,
     },
     /// Show DAO status and your tier
     Status,
     /// Vote on today's bill
-    Vote {
-        /// yea, nay, or abstain
-        choice: String,
-    },
+    Vote { choice: String },
     /// Submit transaction data for bounty
-    Submit {
-        /// JSON file with getTransaction result
-        file: String,
-    },
+    Submit { file: String },
     /// Show Fibonacci tier boundaries
     Tiers,
     /// Run Lean4 proof verification
     Prove,
     /// Split file into 71 Gandalf shards with PQC signatures
     Shards {
-        /// File to shard
         file: String,
-        /// Output directory
         #[arg(long, default_value = "./shards")]
         out: String,
     },
-    /// Generate erdfa URL for an action (opens in browser or prints)
-    Url {
-        /// Action: vote, submit, status, tiers, dao, paste, p2p
-        action: String,
-        /// Extra key=value params
-        params: Vec<String>,
-    },
+    /// Generate erdfa URL for an action
+    Url { action: String, params: Vec<String> },
     /// Open the dioxus app at a specific route
     Open {
-        /// Route: /, /dao, /paste, /p2p, /plugins
         #[arg(default_value = "/")]
         route: String,
     },
+    /// Check all 9 deployment platforms + services
+    Platforms,
+    /// Deploy to one or all platforms (build shards first)
+    Deploy {
+        /// Platform name or "all" (cf, netlify, vercel, gh, hf, oci, all)
+        #[arg(default_value = "all")]
+        target: String,
+    },
+    /// HTTP probe all deployments, post to telemetry
+    Test,
+    /// Run zkperf witnesses on all deployments
+    Zkperf,
+    /// Mesh subcommands
+    Mesh {
+        #[command(subcommand)]
+        sub: MeshCmd,
+    },
+}
+
+#[cfg(feature = "native")]
+#[derive(Subcommand)]
+enum MeshCmd {
+    /// Show mesh logs
+    Logs,
+    /// Show/register mesh peers
+    Peers,
+    /// Post a message to the mesh
+    Ping { msg: String },
+    /// Sync logs with WireGuard peers
+    Sync,
 }
 
 #[cfg(feature = "native")]
@@ -238,6 +253,128 @@ fn main() {
             { let _ = std::process::Command::new("open").arg(&url).spawn(); }
             println!("{}", url);
         }
+
+        Cmd::Platforms => {
+            let platforms = [
+                ("github-pages", "https://meta-introspector.github.io/solfunmeme-dioxus/"),
+                ("cloudflare", "https://solfunmeme-dioxus.pages.dev/"),
+                ("vercel", "https://solfunmeme-dioxus.vercel.app/"),
+                ("huggingface", "https://introspector-solfunmeme-dioxus.hf.space/"),
+                ("oracle-oci", "https://objectstorage.us-ashburn-1.oraclecloud.com/n/id1iqr236pdp/b/solfunmeme-dioxus/o/index.html"),
+                ("netlify", "https://solfunmeme.netlify.app/"),
+                ("render", "https://solfunmeme-static.onrender.com/"),
+                ("self-hosted", "http://192.168.68.62/dioxus/"),
+                ("supabase", "https://aesruozmcbvtutpoyaze.supabase.co/rest/v1/mesh_logs?limit=0"),
+            ];
+            eprintln!("SOLFUNMEME Deployment Platforms");
+            let supa_key = std::fs::read_to_string(
+                format!("{}/.solfunmeme/supabase-anon-key", std::env::var("HOME").unwrap_or_default())
+            ).unwrap_or_default().trim().to_string();
+            for (name, url) in &platforms {
+                let mut req = ureq::get(url).timeout(std::time::Duration::from_secs(10));
+                if *name == "supabase" && !supa_key.is_empty() {
+                    req = req.set("apikey", &supa_key);
+                }
+                let code = req.call().map(|r| r.status()).unwrap_or(0);
+                let s = if code == 200 { "✅" } else { "❌" };
+                if *name == "supabase" {
+                    // Also show row count
+                    let count = ureq::get(&format!("https://aesruozmcbvtutpoyaze.supabase.co/rest/v1/mesh_logs?select=id"))
+                        .set("apikey", &supa_key).set("Prefer", "count=exact")
+                        .timeout(std::time::Duration::from_secs(5))
+                        .call().ok().and_then(|r| r.header("content-range").map(|h| h.to_string()))
+                        .unwrap_or_default();
+                    eprintln!("  {} {:20} {:3} {} ({})", s, name, code, url, count);
+                } else {
+                    eprintln!("  {} {:20} {:3} {}", s, name, code, url);
+                }
+            }
+            eprintln!("\nServices:");
+            for svc in ["solfunmeme-service", "solfunmeme-dioxus", "prometheus", "jaeger"] {
+                let ok = std::process::Command::new("systemctl")
+                    .args(["--user", "is-active", svc]).output()
+                    .map(|o| o.status.success()).unwrap_or(false);
+                eprintln!("  {} {}", if ok { "✅" } else { "❌" }, svc);
+            }
+        }
+
+        Cmd::Deploy { target } => {
+            let targets: Vec<&str> = if target == "all" {
+                vec!["gh", "cf", "vercel", "netlify", "oci", "hf"]
+            } else { vec![target.as_str()] };
+            for t in targets {
+                eprint!("  {} → ", t);
+                let svc = match t {
+                    "gh" => "kagenti-solfunmeme-github-pages",
+                    "cf" => "kagenti-solfunmeme-cloudflare",
+                    "vercel" => "kagenti-solfunmeme-vercel",
+                    "netlify" => "kagenti-solfunmeme-netlify",
+                    "oci" => "kagenti-solfunmeme-oracle-oci",
+                    "hf" => "kagenti-solfunmeme-huggingface",
+                    _ => { eprintln!("unknown"); continue; }
+                };
+                let ok = std::process::Command::new("systemctl")
+                    .args(["--user", "start", svc]).status().map(|s| s.success()).unwrap_or(false);
+                eprintln!("{}", if ok { "✅ triggered" } else { "❌" });
+            }
+        }
+
+        Cmd::Test => {
+            eprintln!("Running probe...");
+            let _ = std::process::Command::new("systemctl")
+                .args(["--user", "start", "kagenti-solfunmeme-test"]).status();
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let _ = std::process::Command::new("journalctl")
+                .args(["--user", "-u", "kagenti-solfunmeme-test", "--no-pager", "-n", "12"]).status();
+        }
+
+        Cmd::Zkperf => {
+            eprintln!("Running zkperf...");
+            let _ = std::process::Command::new("systemctl")
+                .args(["--user", "start", "kagenti-solfunmeme-zkperf"]).status();
+            std::thread::sleep(std::time::Duration::from_secs(20));
+            let _ = std::process::Command::new("journalctl")
+                .args(["--user", "-u", "kagenti-solfunmeme-zkperf", "--no-pager", "-n", "15"]).status();
+        }
+
+        Cmd::Mesh { sub } => match sub {
+            MeshCmd::Logs => {
+                let resp: serde_json::Value = ureq::get(&format!("{}/mesh/logs", cli.endpoint))
+                    .call().unwrap().into_json().unwrap();
+                eprintln!("Mesh logs: {}", resp["count"]);
+                if let Some(logs) = resp["logs"].as_array() {
+                    for l in logs.iter().rev().take(10) {
+                        if let Some(fields) = l["fields"].as_array() {
+                            let fmap: std::collections::HashMap<&str, &str> = fields.iter()
+                                .filter_map(|f| f["Revealed"].as_object().map(|r| (r["key"].as_str().unwrap_or(""), r["value"].as_str().unwrap_or(""))))
+                                .collect();
+                            eprintln!("  {:15} {:20} {}", fmap.get("type").unwrap_or(&"?"), fmap.get("from").unwrap_or(&"?"), fmap.get("msg").unwrap_or(&""));
+                        }
+                    }
+                }
+            }
+            MeshCmd::Peers => {
+                let resp: serde_json::Value = ureq::get(&format!("{}/mesh/peers", cli.endpoint))
+                    .call().unwrap().into_json().unwrap();
+                eprintln!("This node: {} ({})", resp["node"], resp["address"]);
+                if let Some(peers) = resp["peers"].as_array() {
+                    for p in peers {
+                        eprintln!("  {:15} {:15} {}", p["node"].as_str().unwrap_or("?"), p["address"].as_str().unwrap_or("?"), p["endpoint"].as_str().unwrap_or(""));
+                    }
+                }
+            }
+            MeshCmd::Ping { msg } => {
+                let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+                let body = serde_json::json!({"type":"cli-ping","from":"solfunmeme-cli","msg":msg,"ts":ts});
+                let resp = ureq::post(&format!("{}/mesh/logs", cli.endpoint)).send_json(&body).unwrap();
+                eprintln!("Posted: {}", resp.status());
+            }
+            MeshCmd::Sync => {
+                let home = std::env::var("HOME").unwrap_or_default();
+                let _ = std::process::Command::new("bash")
+                    .arg(format!("{}/.solfunmeme/mesh-sync.sh", home)).status();
+            }
+        },
     }
 }
 
