@@ -424,3 +424,4 @@ pub fn pqc_sign_shards(shards: &[Vec<u8>]) -> Vec<Vec<u8>> {
         Sha256::digest(shard).to_vec() // hash commitment; full ML-DSA via privacy::SignedPrivacyShard
     }).collect()
 }
+
