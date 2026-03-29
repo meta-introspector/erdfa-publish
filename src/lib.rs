@@ -299,3 +299,4 @@ mod tests {
 pub mod ipfs;
 pub mod dasl;
 pub mod sheaf;
+pub mod federation;

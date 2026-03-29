@@ -474,6 +474,62 @@ fn main() {
                         continue;
                     }
 
+                    // ActivityPub endpoints
+                    ("GET", "/actor") => {
+                        let actor = erdfa_publish::federation::create_actor(
+                            "https://solana.solfunmeme.com/solfunmeme",
+                            "SOLFUNMEME Witness Node",
+                            &std::fs::read_to_string(format!("{}/.solfunmeme/wireguard/publickey", std::env::var("HOME").unwrap_or_default())).unwrap_or_default(),
+                        );
+                        ("200 OK", serde_json::to_string_pretty(&actor).unwrap())
+                    }
+
+                    ("GET", "/outbox") => {
+                        let mesh_dir = format!("{}/.solfunmeme/mesh-logs", std::env::var("HOME").unwrap_or_default());
+                        let mut notes = Vec::new();
+                        if let Ok(rd) = std::fs::read_dir(&mesh_dir) {
+                            for e in rd.flatten().take(20) {
+                                if e.path().extension().map(|x| x == "json").unwrap_or(false) {
+                                    if let Ok(data) = std::fs::read_to_string(e.path()) {
+                                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data) {
+                                            let note = erdfa_publish::federation::witness_to_note(
+                                                "https://solana.solfunmeme.com/solfunmeme",
+                                                v["fields"].as_array().and_then(|a| a.iter().find_map(|f| f["Revealed"]["value"].as_str().map(|s| s.trim_matches('"')))).unwrap_or("?"),
+                                                &v["merkle_root"].as_str().unwrap_or("?")[..16.min(v["merkle_root"].as_str().unwrap_or("").len())],
+                                                "", "", (0,0,0),
+                                                &v["tags"].as_array().map(|_| "2026").unwrap_or("2026"),
+                                            );
+                                            notes.push(note);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        let outbox = erdfa_publish::federation::create_outbox(
+                            "https://solana.solfunmeme.com/solfunmeme", notes);
+                        ("200 OK", serde_json::to_string_pretty(&outbox).unwrap())
+                    }
+
+                    // RSS/Atom feed of witnesses
+                    ("GET", "/feed") => {
+                        let mesh_dir = format!("{}/.solfunmeme/mesh-logs", std::env::var("HOME").unwrap_or_default());
+                        let mut items = String::new();
+                        if let Ok(rd) = std::fs::read_dir(&mesh_dir) {
+                            for e in rd.flatten().take(20) {
+                                if e.path().extension().map(|x| x == "json").unwrap_or(false) {
+                                    if let Ok(data) = std::fs::read_to_string(e.path()) {
+                                        let hash = format!("{:x}", <sha2::Sha256 as sha2::Digest>::digest(data.as_bytes()));
+                                        items += &format!("<item><title>Witness {}</title><guid>{}</guid><description>{}</description></item>\n", &hash[..8], &hash[..16], &data[..data.len().min(200)].replace('<',"&lt;").replace('>',"&gt;"));
+                                    }
+                                }
+                            }
+                        }
+                        let feed = format!("<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>SOLFUNMEME Witnesses</title><link>https://solana.solfunmeme.com/solfunmeme/outbox</link>{}</channel></rss>", items);
+                        let http = format!("HTTP/1.1 200 OK\r\nContent-Type: application/rss+xml\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{}", feed.len(), feed);
+                        let _ = (&stream).write_all(http.as_bytes());
+                        continue;
+                    }
+
                     _ => ("404 Not Found", r#"{"error":"not found"}"#.into()),
                 };
 
