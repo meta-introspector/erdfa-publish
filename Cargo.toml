@@ -13,10 +13,15 @@ readme = "README.md"
 
 [features]
 default = ["native"]
+ipfs = ["dep:rust-unixfs", "dep:ipld-core", "dep:multibase", "dep:dirs-next", "dep:data-encoding"]
 native = ["dep:parquet", "dep:arrow", "dep:linux-perf-data", "dep:libloading", "dep:lattice-safe-suite", "dep:clap", "dep:ureq"]
 wasm = []
 
 [dependencies]
+serde_bytes = "0.11"
+log = "0.4"
+dirs-next = { version = "2", optional = true }
+data-encoding = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -90,3 +95,16 @@ required-features = ["native"]
 name = "shard-dedup"
 path = "src/bin/shard_dedup.rs"
 required-features = ["native"]
+
+# IPFS (from kant-pastebin)
+[dependencies.rust-unixfs]
+path = "/mnt/data1/kant/pastebin/vendor/rust-ipfs/unixfs"
+optional = true
+
+[dependencies.ipld-core]
+version = "0.4.1"
+optional = true
+
+[dependencies.multibase]
+version = "0.9"
+optional = true
