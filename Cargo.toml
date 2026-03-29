@@ -15,6 +15,7 @@ readme = "README.md"
 default = ["native"]
 ipfs = ["dep:rust-unixfs", "dep:ipld-core", "dep:multibase", "dep:dirs-next", "dep:data-encoding"]
 native = ["dep:parquet", "dep:arrow", "dep:linux-perf-data", "dep:libloading", "dep:lattice-safe-suite", "dep:clap", "dep:ureq"]
+cli = ["dep:clap"]
 wasm = []
 
 [dependencies]
@@ -32,6 +33,7 @@ parquet = { version = "53", default-features = false, features = ["arrow", "snap
 arrow = { version = "53", default-features = false, features = ["json"], optional = true }
 linux-perf-data = { version = "0.6", optional = true }
 anyhow = "1"
+rayon = "1.10"
 lattice-safe-suite = { version = "0.4", optional = true }
 libloading = { version = "0.8", optional = true }
 ureq = { version = "2", optional = true, features = ["json"] }
@@ -108,3 +110,8 @@ optional = true
 [dependencies.multibase]
 version = "0.9"
 optional = true
+
+[[bin]]
+name = "git-index"
+path = "src/bin/git_index.rs"
+required-features = ["cli"]
