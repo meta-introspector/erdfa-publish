@@ -100,7 +100,7 @@ required-features = ["native"]
 
 # IPFS (from kant-pastebin)
 [dependencies.rust-unixfs]
-path = "/mnt/data1/kant/pastebin/vendor/rust-ipfs/unixfs"
+path = "vendor/rust-ipfs/unixfs"
 optional = true
 
 [dependencies.ipld-core]

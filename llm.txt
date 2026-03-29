@@ -1,66 +1,7 @@
-# erdfa-publish
+# kagenti NotebookLM Sources
+# Generated: 2026-03-28T15:00:09Z
 
-> llm.txt — Monster group layered summary
-> Generated: 2026-03-17T20:02:14Z
+## notebooklm-tools
+Sources: 1, Words: 1,244
 
-## g0 — Scalar (identity)
-
-erdfa-publish: erdfa-publish | 5 commits | 9 files | branch: main
-Last: 557d439 feat: semantic CBOR shards with DA51 tagging
-
-## g1 — Basis vectors (primary components)
-
-- e_examples: 1 files
-- e_src: 2 files
-- e_target: 434 files
-
-Languages: rs=3 nix=0 py=0 sh=0 md=3
-
-## g2 — Bivectors (relationships)
-
-Cargo dependencies:
-- erdfa-publish ∧ serde
-
-Remotes:
-- erdfa-publish ∧ nix-linked (<local-git-mirror>)
-- erdfa-publish ∧ origin (https://github.com/Escaped-RDFa/erdfa-publish-rs.git)
-
-## g3 — Trivectors (deep structure)
-
-- README.md (123 lines)
-- src/lib.rs (140 lines)
-- Cargo.toml (12 lines)
-
-## g4+ — Higher blades (metadata)
-
-Authors: 1
-Bins: 0
-0
-Flake: no
-
-## g5 — Pentavectors (working state)
-
-Untracked: 2
-- llm.txt
-- src/render.rs
-
-## g6 — Hexavectors (build state)
-
-- Cargo.lock: 263 lines
-- Debug build: 
-
-## g7 — Heptavectors (remote state)
-
-- GitHub: Escaped-RDFa/erdfa-publish-rs
-- nix-linked: <local-git-mirror>
-- origin: https://github.com/Escaped-RDFa/erdfa-publish-rs.git
-
-## g8 — Octavectors (source weight)
-
-- ./src/render.rs: 145 lines
-- ./src/lib.rs: 140 lines
-- ./examples/demo.rs: 37 lines
-
----
-Format: erdfa-publish DA51 CBOR compatible
-CID: bafk3c6ea115d1c3e8f606acb4a8d5e9d621
+  - source_01.txt (1,244 words)
