@@ -17,7 +17,12 @@
             pname = "erdfa-publish";
             version = "0.1.0";
             src = ./.;
-            cargoLock.lockFile = ./Cargo.lock;
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+              allowBuiltinFetchGit = true;
+            };
+            buildFeatures = [ "native" "cli" ];
+            buildNoDefaultFeatures = true;
           };
 
           default = self.packages.${system}.erdfa-publish;
