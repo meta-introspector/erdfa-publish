@@ -269,10 +269,13 @@ fn cmd_create(dir: &PathBuf, id: &str, typ: &str, text: &str, tags: &[String]) {
 }
 
 fn cmd_import(src: &PathBuf, dir: &PathBuf, max_depth: u8) {
+    use rayon::prelude::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     fs::create_dir_all(dir).ok();
-    let mut total_shards = 0usize;
-    let mut total_arrows = 0usize;
-    let mut files = 0usize;
+    let total_shards = AtomicUsize::new(0);
+    let total_arrows = AtomicUsize::new(0);
+    let files = AtomicUsize::new(0);
 
     let entries: Vec<_> = fs::read_dir(src).expect("cannot read src dir")
         .flatten()
@@ -285,18 +288,17 @@ fn cmd_import(src: &PathBuf, dir: &PathBuf, max_depth: u8) {
         })
         .collect();
 
-    for entry in &entries {
+    entries.par_iter().for_each(|entry| {
         let path = entry.path();
         let text = match fs::read_to_string(&path) {
             Ok(t) => t,
-            Err(_) => continue,
+            Err(_) => return,
         };
         let stem = path.file_stem().unwrap().to_string_lossy().to_string();
         let (shards, arrows) = cft::decompose(&stem, &text);
 
         for shard in &shards {
             let cbor = shard.to_cbor();
-            // sanitize id for filename
             let fname = shard.id.replace(['/', '→', ':', ' '], "_");
             fs::write(dir.join(format!("{}.cbor", fname)), &cbor).ok();
         }
@@ -306,15 +308,15 @@ fn cmd_import(src: &PathBuf, dir: &PathBuf, max_depth: u8) {
             fs::write(dir.join(format!("{}.cbor", fname)), &cbor).ok();
         }
 
-        total_shards += shards.len();
-        total_arrows += arrows.len();
-        files += 1;
-    }
+        total_shards.fetch_add(shards.len(), Ordering::Relaxed);
+        total_arrows.fetch_add(arrows.len(), Ordering::Relaxed);
+        files.fetch_add(1, Ordering::Relaxed);
+    });
 
     let obj = json!({
-        "files": files,
-        "shards": total_shards,
-        "arrows": total_arrows,
+        "files": files.load(Ordering::Relaxed),
+        "shards": total_shards.load(Ordering::Relaxed),
+        "arrows": total_arrows.load(Ordering::Relaxed),
         "dir": dir.to_string_lossy(),
     });
     println!("{}", serde_json::to_string(&obj).unwrap());
