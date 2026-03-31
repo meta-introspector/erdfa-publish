@@ -10,11 +10,13 @@ pub mod ingest;
 pub mod stego;
 pub mod distribute;
 pub mod hecke;
+pub mod maass;
 
 // Re-export for WASM consumers
 pub use stego::{StegoPlugin, StegoChain};
 pub use distribute::{DistributionPlan, DistributionTarget, Platform, AclTier, Ecc, IpfsManifest};
 pub use hecke::{HeckeEigenvalue, hecke_eigenvalue, hecke_shard, orbifold_coords, PRIMES_71};
+pub use maass::{MaassResult, find_shadow, torus_coord, orbifold, SSP};
 
 /// DA51 CBOR tag (0xDA51 = 55889)
 const DASL_TAG: u64 = 55889;

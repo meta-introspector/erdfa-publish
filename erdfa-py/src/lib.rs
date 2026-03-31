@@ -80,7 +80,91 @@ fn crown_product() -> u64 {
     47 * 59 * 71
 }
 
-/// The Python module
+const SP: usize = 512 * 512;
+const SL: usize = 6;
+const SC: usize = SP * SL / 8;
+const SH: usize = 36;
+
+fn bp_embed(rgb: &mut [u8], data: &[u8]) {
+    for (i, &byte) in data.iter().enumerate() {
+        if i >= SC { break; }
+        for b in 0..8u8 {
+            let bi = i * 8 + b as usize;
+            let (px, pl) = (bi / SL, bi % SL);
+            if px >= SP { return; }
+            let idx = px * 3 + pl % 3;
+            let bp = pl / 3;
+            rgb[idx] = (rgb[idx] & !(1 << bp)) | (((byte >> b) & 1) << bp);
+        }
+    }
+}
+
+fn bp_extract(rgb: &[u8], len: usize) -> Vec<u8> {
+    (0..len.min(SC)).map(|i| (0..8u8).map(|b| {
+        let bi = i * 8 + b as usize;
+        let (px, pl) = (bi / SL, bi % SL);
+        if px >= SP { return 0; }
+        ((rgb[px * 3 + pl % 3] >> (pl / 3)) & 1) << b
+    }).sum()).collect()
+}
+
+#[pyfunction]
+fn seal_encode(data: &[u8]) -> PyResult<Vec<u8>> {
+    if data.len() + SH > SC { return Err(pyo3::exceptions::PyValueError::new_err("too large")); }
+    let h = Sha256::digest(data);
+    let mut w = Vec::with_capacity(SH + data.len());
+    w.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    w.extend_from_slice(&h);
+    w.extend_from_slice(data);
+    let mut rgb = vec![128u8; SP * 3];
+    bp_embed(&mut rgb, &w);
+    Ok(rgb)
+}
+
+#[pyfunction]
+fn seal_decode(rgb: &[u8]) -> PyResult<Vec<u8>> {
+    if rgb.len() < SP * 3 { return Err(pyo3::exceptions::PyValueError::new_err("too small")); }
+    let hdr = bp_extract(rgb, SH);
+    let len = u32::from_le_bytes([hdr[0], hdr[1], hdr[2], hdr[3]]) as usize;
+    if len == 0 || len + SH > SC { return Err(pyo3::exceptions::PyValueError::new_err("invalid")); }
+    let w = bp_extract(rgb, SH + len);
+    let payload = &w[36..36 + len];
+    if <[u8; 32]>::try_from(&w[4..36]).unwrap() != <[u8; 32]>::from(Sha256::digest(payload)) {
+        return Err(pyo3::exceptions::PyValueError::new_err("integrity"));
+    }
+    Ok(payload.to_vec())
+}
+
+#[pyfunction]
+fn seal_pack(state: Vec<f32>, dna: &[u8], wasm: Option<&[u8]>) -> PyResult<Vec<u8>> {
+    if state.len() != 24 { return Err(pyo3::exceptions::PyValueError::new_err("need 24 floats")); }
+    let mut buf = b"SEAL".to_vec();
+    for f in &state { buf.extend_from_slice(&f.to_le_bytes()); }
+    buf.extend_from_slice(&(dna.len() as u32).to_le_bytes());
+    buf.extend_from_slice(dna);
+    let w = wasm.unwrap_or(&[]);
+    buf.extend_from_slice(&(w.len() as u32).to_le_bytes());
+    buf.extend_from_slice(w);
+    Ok(buf)
+}
+
+#[pyfunction]
+fn seal_unpack(data: &[u8]) -> PyResult<(Vec<f32>, Vec<u8>, Vec<u8>)> {
+    if data.len() < 104 || &data[0..4] != b"SEAL" {
+        return Err(pyo3::exceptions::PyValueError::new_err("invalid SEAL"));
+    }
+    let state: Vec<f32> = (0..24).map(|i| {
+        let o = 4 + i * 4;
+        f32::from_le_bytes([data[o], data[o+1], data[o+2], data[o+3]])
+    }).collect();
+    let dl = u32::from_le_bytes([data[100], data[101], data[102], data[103]]) as usize;
+    let dna = data[104..104 + dl].to_vec();
+    let wo = 104 + dl;
+    let wl = u32::from_le_bytes([data[wo], data[wo+1], data[wo+2], data[wo+3]]) as usize;
+    let wasm = if wl > 0 { data[wo+4..wo+4+wl].to_vec() } else { vec![] };
+    Ok((state, dna, wasm))
+}
+
 #[pymodule]
 fn erdfa_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(orbifold_coords, m)?)?;
@@ -90,5 +174,9 @@ fn erdfa_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(wrap_dasl, m)?)?;
     m.add_function(wrap_pyfunction!(fractran_encode, m)?)?;
     m.add_function(wrap_pyfunction!(crown_product, m)?)?;
+    m.add_function(wrap_pyfunction!(seal_encode, m)?)?;
+    m.add_function(wrap_pyfunction!(seal_decode, m)?)?;
+    m.add_function(wrap_pyfunction!(seal_pack, m)?)?;
+    m.add_function(wrap_pyfunction!(seal_unpack, m)?)?;
     Ok(())
 }
