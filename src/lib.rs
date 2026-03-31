@@ -301,4 +301,5 @@ mod tests {
 pub mod ipfs;
 pub mod dasl;
 pub mod sheaf;
+pub mod seal;
 pub mod federation;
