@@ -11,6 +11,8 @@ pub mod stego;
 pub mod distribute;
 pub mod hecke;
 pub mod maass;
+#[cfg(feature = "native")]
+pub mod plugins;
 
 // Re-export for WASM consumers
 pub use stego::{StegoPlugin, StegoChain};

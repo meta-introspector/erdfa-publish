@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 use sha2::{Digest, Sha256};
 
 /// First 71 primes for Hecke operator scaling
@@ -109,7 +110,7 @@ fn bp_extract(rgb: &[u8], len: usize) -> Vec<u8> {
 }
 
 #[pyfunction]
-fn seal_encode(data: &[u8]) -> PyResult<Vec<u8>> {
+fn seal_encode(py: Python<'_>, data: &[u8]) -> PyResult<Py<PyBytes>> {
     if data.len() + SH > SC { return Err(pyo3::exceptions::PyValueError::new_err("too large")); }
     let h = Sha256::digest(data);
     let mut w = Vec::with_capacity(SH + data.len());
@@ -118,11 +119,11 @@ fn seal_encode(data: &[u8]) -> PyResult<Vec<u8>> {
     w.extend_from_slice(data);
     let mut rgb = vec![128u8; SP * 3];
     bp_embed(&mut rgb, &w);
-    Ok(rgb)
+    Ok(PyBytes::new_bound(py, &rgb).into())
 }
 
 #[pyfunction]
-fn seal_decode(rgb: &[u8]) -> PyResult<Vec<u8>> {
+fn seal_decode(py: Python<'_>, rgb: &[u8]) -> PyResult<Py<PyBytes>> {
     if rgb.len() < SP * 3 { return Err(pyo3::exceptions::PyValueError::new_err("too small")); }
     let hdr = bp_extract(rgb, SH);
     let len = u32::from_le_bytes([hdr[0], hdr[1], hdr[2], hdr[3]]) as usize;
@@ -132,11 +133,11 @@ fn seal_decode(rgb: &[u8]) -> PyResult<Vec<u8>> {
     if <[u8; 32]>::try_from(&w[4..36]).unwrap() != <[u8; 32]>::from(Sha256::digest(payload)) {
         return Err(pyo3::exceptions::PyValueError::new_err("integrity"));
     }
-    Ok(payload.to_vec())
+    Ok(PyBytes::new_bound(py, payload).into())
 }
 
 #[pyfunction]
-fn seal_pack(state: Vec<f32>, dna: &[u8], wasm: Option<&[u8]>) -> PyResult<Vec<u8>> {
+fn seal_pack(py: Python<'_>, state: Vec<f32>, dna: &[u8], wasm: Option<&[u8]>) -> PyResult<Py<PyBytes>> {
     if state.len() != 24 { return Err(pyo3::exceptions::PyValueError::new_err("need 24 floats")); }
     let mut buf = b"SEAL".to_vec();
     for f in &state { buf.extend_from_slice(&f.to_le_bytes()); }
@@ -145,11 +146,11 @@ fn seal_pack(state: Vec<f32>, dna: &[u8], wasm: Option<&[u8]>) -> PyResult<Vec<u
     let w = wasm.unwrap_or(&[]);
     buf.extend_from_slice(&(w.len() as u32).to_le_bytes());
     buf.extend_from_slice(w);
-    Ok(buf)
+    Ok(PyBytes::new_bound(py, &buf).into())
 }
 
 #[pyfunction]
-fn seal_unpack(data: &[u8]) -> PyResult<(Vec<f32>, Vec<u8>, Vec<u8>)> {
+fn seal_unpack(py: Python<'_>, data: &[u8]) -> PyResult<(Vec<f32>, Py<PyBytes>, Py<PyBytes>)> {
     if data.len() < 104 || &data[0..4] != b"SEAL" {
         return Err(pyo3::exceptions::PyValueError::new_err("invalid SEAL"));
     }
@@ -162,7 +163,7 @@ fn seal_unpack(data: &[u8]) -> PyResult<(Vec<f32>, Vec<u8>, Vec<u8>)> {
     let wo = 104 + dl;
     let wl = u32::from_le_bytes([data[wo], data[wo+1], data[wo+2], data[wo+3]]) as usize;
     let wasm = if wl > 0 { data[wo+4..wo+4+wl].to_vec() } else { vec![] };
-    Ok((state, dna, wasm))
+    Ok((state, PyBytes::new_bound(py, &dna).into(), PyBytes::new_bound(py, &wasm).into()))
 }
 
 #[pymodule]

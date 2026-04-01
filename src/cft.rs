@@ -196,3 +196,142 @@ fn truncate(s: &str, max: usize) -> String {
     while end > 0 && !s.is_char_boundary(end) { end -= 1; }
     format!("{}…", &s[..end])
 }
+
+// ── Structured CFT: JSON / YAML / TOML ──────────────────────────
+
+/// Detect format and decompose structured data into the conformal tower.
+/// JSON objects/arrays become field-level shards with arrows to value shards,
+/// then text values get the standard text CFT (paragraph→line→token→byte).
+pub fn decompose_structured(id_prefix: &str, text: &str, ext: &str, max_depth: u8) -> (Vec<Shard>, Vec<Shard>) {
+    let val: Option<serde_json::Value> = match ext {
+        "json" => serde_json::from_str(text).ok(),
+        "yaml" | "yml" => serde_yaml::from_str::<serde_json::Value>(text).ok(),
+        "toml" => toml::from_str::<toml::Value>(text).ok().and_then(|v| {
+            serde_json::to_value(v).ok()
+        }),
+        _ => None,
+    };
+    match val {
+        Some(v) => decompose_value(id_prefix, &v, max_depth),
+        None => decompose_depth(id_prefix, text, max_depth),
+    }
+}
+
+/// Recursively decompose a serde_json::Value into CFT shards + arrows.
+fn decompose_value(prefix: &str, val: &serde_json::Value, max_depth: u8) -> (Vec<Shard>, Vec<Shard>) {
+    let mut shards = Vec::new();
+    let mut arrows = Vec::new();
+
+    let root_id = format!("{}_root", prefix);
+    match val {
+        serde_json::Value::Object(map) => {
+            shards.push(Shard::new(
+                &root_id,
+                Component::KeyValue {
+                    pairs: vec![
+                        ("type".into(), "object".into()),
+                        ("fields".into(), map.len().to_string()),
+                    ],
+                },
+            ).with_tags(vec!["cft".into(), "cft.object".into()]));
+
+            for (key, child) in map {
+                let field_id = format!("{}_{}", prefix, sanitize_id(key));
+                let (child_shards, child_arrows) = decompose_child(&field_id, key, child, max_depth);
+                arrows.push(arrow_shard(&root_id, &format!("{}_root", field_id), Scale::Post, Scale::Paragraph));
+                shards.extend(child_shards);
+                arrows.extend(child_arrows);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            shards.push(Shard::new(
+                &root_id,
+                Component::KeyValue {
+                    pairs: vec![
+                        ("type".into(), "array".into()),
+                        ("length".into(), arr.len().to_string()),
+                    ],
+                },
+            ).with_tags(vec!["cft".into(), "cft.array".into()]));
+
+            for (i, child) in arr.iter().enumerate() {
+                let elem_id = format!("{}_i{}", prefix, i);
+                let (child_shards, child_arrows) = decompose_child(&elem_id, &i.to_string(), child, max_depth);
+                arrows.push(arrow_shard(&root_id, &format!("{}_root", elem_id), Scale::Post, Scale::Paragraph));
+                shards.extend(child_shards);
+                arrows.extend(child_arrows);
+            }
+        }
+        _ => {
+            // Scalar at root — treat as text
+            let text = scalar_to_string(val);
+            return decompose_depth(prefix, &text, max_depth);
+        }
+    }
+    (shards, arrows)
+}
+
+/// Decompose a single field (key + value) into shards.
+fn decompose_child(prefix: &str, key: &str, val: &serde_json::Value, max_depth: u8) -> (Vec<Shard>, Vec<Shard>) {
+    let mut shards = Vec::new();
+    let mut arrows = Vec::new();
+
+    let root_id = format!("{}_root", prefix);
+    match val {
+        serde_json::Value::Object(_) | serde_json::Value::Array(_) => {
+            // Recurse
+            let (s, a) = decompose_value(prefix, val, max_depth);
+            shards.extend(s);
+            arrows.extend(a);
+        }
+        _ => {
+            let text = scalar_to_string(val);
+            // Field shard with key name
+            shards.push(Shard::new(
+                &root_id,
+                Component::KeyValue {
+                    pairs: vec![
+                        ("key".into(), key.into()),
+                        ("type".into(), json_type_name(val).into()),
+                        ("len".into(), text.len().to_string()),
+                    ],
+                },
+            ).with_tags(vec!["cft".into(), "cft.field".into()]));
+
+            // Text CFT of the value
+            if max_depth > 0 && !text.is_empty() {
+                let val_prefix = format!("{}_val", prefix);
+                let (text_shards, text_arrows) = decompose_depth(&val_prefix, &text, max_depth);
+                if let Some(first) = text_shards.first() {
+                    arrows.push(arrow_shard(&root_id, &first.id, Scale::Paragraph, Scale::Line));
+                }
+                shards.extend(text_shards);
+                arrows.extend(text_arrows);
+            }
+        }
+    }
+    (shards, arrows)
+}
+
+fn scalar_to_string(val: &serde_json::Value) -> String {
+    match val {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
+fn json_type_name(val: &serde_json::Value) -> &'static str {
+    match val {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "bool",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
+    }
+}
+
+fn sanitize_id(s: &str) -> String {
+    s.chars().map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' }).collect()
+}

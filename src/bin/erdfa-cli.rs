@@ -128,6 +128,12 @@ enum Cmd {
         #[command(subcommand)]
         action: PrivacyAction,
     },
+    /// List loaded ZOS plugins
+    Plugins {
+        /// Plugin directory (default: ~/git/erdfa-plugins/target/release)
+        #[arg(long)]
+        dir: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -179,6 +185,17 @@ fn main() {
             cmd_experiment(&dir, &id, &weights, &topo, steps, &hypothesis),
         Cmd::Agda { dir, out, module } => cmd_agda(&dir, &out, &module),
         Cmd::Privacy { action } => cmd_privacy(action),
+        Cmd::Plugins { dir } => {
+            use erdfa_publish::plugins::PluginLoader;
+            let mut loader = PluginLoader::new();
+            let d = dir.unwrap_or_else(PluginLoader::default_dir);
+            let loaded = loader.load_dir(&d);
+            println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+                "dir": d.to_string_lossy(),
+                "plugins": loader.list().iter().map(|(n, c)| serde_json::json!({"name": n, "coords": c})).collect::<Vec<_>>(),
+                "count": loaded.len(),
+            })).unwrap());
+        },
     }
 }
 
@@ -283,7 +300,7 @@ fn cmd_import(src: &PathBuf, dir: &PathBuf, max_depth: u8) {
             let p = e.path();
             p.is_file() && matches!(
                 p.extension().and_then(|e| e.to_str()),
-                Some("txt" | "md" | "org" | "rs" | "el" | "json" | "toml" | "yaml" | "yml" | "sh" | "py")
+                Some("txt" | "md" | "org" | "rs" | "el" | "json" | "toml" | "yaml" | "yml" | "sh" | "py" | "hs" | "agda" | "v" | "ml" | "mli" | "mly" | "mll" | "lean" | "gbnf")
             )
         })
         .collect();
@@ -295,22 +312,26 @@ fn cmd_import(src: &PathBuf, dir: &PathBuf, max_depth: u8) {
             Err(_) => return,
         };
         let stem = path.file_stem().unwrap().to_string_lossy().to_string();
-        let (shards, arrows) = cft::decompose(&stem, &text);
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let (shards, arrows) = cft::decompose_structured(&stem, &text, ext, max_depth);
 
+        // Batch: one file per source, all shards concatenated
+        let mut batch = Vec::with_capacity(shards.len() * 256 + arrows.len() * 256);
         for shard in &shards {
-            let cbor = shard.to_cbor();
-            let fname = shard.id.replace(['/', '→', ':', ' '], "_");
-            fs::write(dir.join(format!("{}.cbor", fname)), &cbor).ok();
+            batch.extend_from_slice(&shard.to_cbor());
         }
         for arrow in &arrows {
-            let cbor = arrow.to_cbor();
-            let fname = arrow.id.replace(['/', '→', ':', ' '], "_");
-            fs::write(dir.join(format!("{}.cbor", fname)), &cbor).ok();
+            batch.extend_from_slice(&arrow.to_cbor());
         }
+        let fname = stem.replace(['/', ':', ' '], "_");
+        fs::write(dir.join(format!("{}.batch.cbor", fname)), &batch).ok();
 
-        total_shards.fetch_add(shards.len(), Ordering::Relaxed);
-        total_arrows.fetch_add(arrows.len(), Ordering::Relaxed);
-        files.fetch_add(1, Ordering::Relaxed);
+        let s = shards.len();
+        let a = arrows.len();
+        total_shards.fetch_add(s, Ordering::Relaxed);
+        total_arrows.fetch_add(a, Ordering::Relaxed);
+        let f = files.fetch_add(1, Ordering::Relaxed) + 1;
+        eprintln!("[{}/{}] {} → {} shards + {} arrows", f, entries.len(), stem, s, a);
     });
 
     let obj = json!({
