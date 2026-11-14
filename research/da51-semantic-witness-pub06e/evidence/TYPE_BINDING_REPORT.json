@@ -1,0 +1,27 @@
+{
+  "axiom_dependencies": {
+    "PUB06E10C.addition_binding": [
+      "propext"
+    ],
+    "PUB06E10C.alpha_binding": [],
+    "PUB06E10C.order_binding": [],
+    "PUB06E10C.string_binding": []
+  },
+  "exact_types_sha256": "e6d9b3158361d2400934be33b501bc7055c07fc5e6762e0485a1fd58c28a303c",
+  "limitations": [
+    "Only four fixed semantic propositions",
+    "Not a general equivalence decision procedure",
+    "No certified source-to-declaration mapping",
+    "Not an independently verified DA51 binding",
+    "Original DA51 trust audit still pending"
+  ],
+  "negative_proofs_rejected": 2,
+  "nonstandard_axioms": [],
+  "positive_type_bindings": 4,
+  "production_ready": false,
+  "source_sha256": "6adf4888209b5d8df02323120bcbee72bbfebe1d2de4956320680dfb0522a4b4",
+  "stage": "PUB-06E-10C",
+  "status": "PASS",
+  "trust_output_sha256": "90686a56d0d1e31629031aa348342c5c03f41907af41efc561d8a694e64da617",
+  "validation": "Lean elaboration and successful module compilation"
+}

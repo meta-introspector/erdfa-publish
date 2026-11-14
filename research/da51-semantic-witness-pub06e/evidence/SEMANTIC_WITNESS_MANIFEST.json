@@ -1,0 +1,79 @@
+{
+  "automatic_da51_binding_verified": false,
+  "axiom_allowlist": [
+    "Quot.sound",
+    "propext"
+  ],
+  "claims": [
+    {
+      "axiom_dependencies": [],
+      "elaborated_statements_sha256": "d5fb347692d5fa13829f8a9767837c3f36e70d6c5f7a147d2b963f99286b8c55",
+      "kernel_query_sha256": "0ad77b10aa0a65071ab1fd3187da0bde72667965b2eeee968749b257aaab8bfa",
+      "kind": "UNIVERSAL_EQUALITY",
+      "lhs": "alphaA",
+      "proof_source_sha256": "6adf4888209b5d8df02323120bcbee72bbfebe1d2de4956320680dfb0522a4b4",
+      "rhs": "alphaB",
+      "scope": "all Nat inputs",
+      "scope_validated": true,
+      "source_statement": "\u2200 n : Nat, alphaA n = alphaB n",
+      "theorem": "PUB06E09B.alpha_equivalent"
+    },
+    {
+      "axiom_dependencies": [
+        "propext"
+      ],
+      "elaborated_statements_sha256": "d5fb347692d5fa13829f8a9767837c3f36e70d6c5f7a147d2b963f99286b8c55",
+      "kernel_query_sha256": "0ad77b10aa0a65071ab1fd3187da0bde72667965b2eeee968749b257aaab8bfa",
+      "kind": "UNIVERSAL_EQUALITY",
+      "lhs": "addA",
+      "proof_source_sha256": "6adf4888209b5d8df02323120bcbee72bbfebe1d2de4956320680dfb0522a4b4",
+      "rhs": "addB",
+      "scope": "all Nat inputs",
+      "scope_validated": true,
+      "source_statement": "\u2200 n : Nat, addA n = addB n",
+      "theorem": "PUB06E09B.addition_equivalent"
+    },
+    {
+      "axiom_dependencies": [],
+      "elaborated_statements_sha256": "d5fb347692d5fa13829f8a9767837c3f36e70d6c5f7a147d2b963f99286b8c55",
+      "kernel_query_sha256": "0ad77b10aa0a65071ab1fd3187da0bde72667965b2eeee968749b257aaab8bfa",
+      "kind": "COUNTEREXAMPLE",
+      "lhs": "orderA",
+      "proof_source_sha256": "6adf4888209b5d8df02323120bcbee72bbfebe1d2de4956320680dfb0522a4b4",
+      "rhs": "orderB",
+      "scope": "input Nat 10",
+      "scope_validated": true,
+      "source_statement": "orderA 10 \u2260 orderB 10",
+      "theorem": "PUB06E09B.order_difference"
+    },
+    {
+      "axiom_dependencies": [],
+      "elaborated_statements_sha256": "d5fb347692d5fa13829f8a9767837c3f36e70d6c5f7a147d2b963f99286b8c55",
+      "kernel_query_sha256": "0ad77b10aa0a65071ab1fd3187da0bde72667965b2eeee968749b257aaab8bfa",
+      "kind": "VALUE_INEQUALITY",
+      "lhs": "stringA",
+      "proof_source_sha256": "6adf4888209b5d8df02323120bcbee72bbfebe1d2de4956320680dfb0522a4b4",
+      "rhs": "stringB",
+      "scope": "two fixed String values",
+      "scope_validated": true,
+      "source_statement": "stringA \u2260 stringB",
+      "theorem": "PUB06E09B.string_difference"
+    }
+  ],
+  "evidence_scope": "isolated Lean fixture declarations",
+  "general_semantic_equivalence_decider": false,
+  "ipfs_retrieval_verified": false,
+  "lean_parser_certified": false,
+  "lean_source_sha256": "6adf4888209b5d8df02323120bcbee72bbfebe1d2de4956320680dfb0522a4b4",
+  "lean_statements_query_sha256": "22617eb533ca268063083f70b5fc565a6f278ebf34852ada166b7c5fca133ba5",
+  "lean_trust_query_sha256": "866969cd922a14fe385bd7276467798d9539f64e2d5fd9e3f9266d6acca5ee48",
+  "observation_count": 12,
+  "observations_sha256": "6c271d0eb5be35a0efa7d4a2143c4d4c16c418ba9a1d39495ae0375cf26f1346",
+  "production_ready": false,
+  "proofs_recompiled": true,
+  "reference_toolchain": "Lean 4.35.0",
+  "runtime_observations_replayed": true,
+  "schema": "zos.semantic-witness.experimental.v1",
+  "stage": "PUB-06E-10A",
+  "verified_claim_count": 4
+}

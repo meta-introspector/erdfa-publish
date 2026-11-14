@@ -1,0 +1,16 @@
+{
+  "adversarial_rejections": 8,
+  "authorization_scope": "one pinned witness",
+  "baseline_authorized": true,
+  "general_semantic_verification": false,
+  "original_failure": "nonunique adversarial replacement",
+  "original_repository_modified": false,
+  "original_source_sha256": "67ea4506ffe56e7c1c883bdd80d41c22e5e9e32f25e5ac67000275217d2cdd96",
+  "production_ready": false,
+  "repair": "unique pointwise scope mutation",
+  "repaired_source_sha256": "59526bcfae7b9479469ae43275bb661facc74a7e6063fd1bb0b5016a9ce6bb9a",
+  "stage": "PUB-06E-11E-04R",
+  "status": "PASS",
+  "valid_cbor_tampering_tests": 3,
+  "witness_sha256": "df436530f2716cf5f9c92261374638352d4c5e0687e498d1c04b5bd088fb69ec"
+}

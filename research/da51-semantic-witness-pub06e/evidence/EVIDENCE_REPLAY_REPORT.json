@@ -1,0 +1,57 @@
+{
+  "adversarial_cases": [
+    {
+      "attack": "PROOF_HASH",
+      "reason": "EVIDENCE_MISMATCH",
+      "rejected": true
+    },
+    {
+      "attack": "TRUST_HASH",
+      "reason": "EVIDENCE_MISMATCH",
+      "rejected": true
+    },
+    {
+      "attack": "THEOREM",
+      "reason": "CLAIM_MISMATCH",
+      "rejected": true
+    },
+    {
+      "attack": "SCOPE",
+      "reason": "CLAIM_MISMATCH",
+      "rejected": true
+    },
+    {
+      "attack": "AXIOMS",
+      "reason": "CLAIM_MISMATCH",
+      "rejected": true
+    },
+    {
+      "attack": "CLAIM_REMOVAL",
+      "reason": "CLAIM_MISMATCH",
+      "rejected": true
+    },
+    {
+      "attack": "SCHEMA",
+      "reason": "SCHEMA_MISMATCH",
+      "rejected": true
+    }
+  ],
+  "evidence_hashes_checked": 5,
+  "exact_type_bindings": 4,
+  "lean_rebuilt": true,
+  "limitations": [
+    "Only a pinned four-claim fixture",
+    "Manifest fields retain their original limited trust scope",
+    "No general Lean proof verifier in Rust",
+    "No automatic authorization of arbitrary DA51 claims",
+    "No authenticated signer or publisher",
+    "Original Rust consumer is unchanged"
+  ],
+  "production_ready": false,
+  "semantic_claims_checked": 4,
+  "source_tampering_detected": true,
+  "stage": "PUB-06E-11E-05",
+  "status": "PASS",
+  "trust_output_byte_identical": true,
+  "witness_sha256": "df436530f2716cf5f9c92261374638352d4c5e0687e498d1c04b5bd088fb69ec"
+}

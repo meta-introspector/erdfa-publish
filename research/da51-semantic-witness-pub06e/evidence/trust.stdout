@@ -1,0 +1,4 @@
+'PUB06E10C.alpha_binding' does not depend on any axioms
+'PUB06E10C.addition_binding' depends on axioms: [propext]
+'PUB06E10C.order_binding' does not depend on any axioms
+'PUB06E10C.string_binding' does not depend on any axioms
