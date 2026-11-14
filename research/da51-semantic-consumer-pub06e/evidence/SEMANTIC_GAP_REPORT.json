@@ -1,0 +1,13 @@
+{
+  "adversarial_probes_passed": 3,
+  "baseline_tests_passed": 11,
+  "finding": "Under a deliberately updated trusted digest, the isolated consumer accepts a changed theorem, statement and axiom list",
+  "original_repository_modified": false,
+  "production_exploit_demonstrated": false,
+  "production_ready": false,
+  "remediation_implemented": false,
+  "scope": "experimental isolated consumer",
+  "stage": "PUB-06E-14C-R1",
+  "status": "PASS",
+  "trusted_digest_policy": "updated by test harness"
+}

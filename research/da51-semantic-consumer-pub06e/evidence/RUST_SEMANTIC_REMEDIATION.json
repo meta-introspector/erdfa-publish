@@ -1,0 +1,18 @@
+{
+  "authorization_scope": "one audited DA51 fixture",
+  "baseline_tests": 11,
+  "gap_reproduction_tests": 3,
+  "general_cbor_canonicality_proven": false,
+  "general_lean_verifier": false,
+  "policy": "trusted object digest plus pinned exact claims",
+  "production_integration": false,
+  "production_ready": false,
+  "reference_claims_source": "SHA256-verified compile-time fixture",
+  "remediation_tests": 4,
+  "rust_source_sha256": "34020274c1abf4a80230019f082dcd63a62703f35f65b2019324ab42f1b95254",
+  "stage": "PUB-06E-14D",
+  "status": "PASS",
+  "total_tests_failed": 0,
+  "total_tests_passed": 18,
+  "witness_sha256": "df436530f2716cf5f9c92261374638352d4c5e0687e498d1c04b5bd088fb69ec"
+}
