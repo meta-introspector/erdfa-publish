@@ -1,0 +1,10 @@
+[package]
+name = "zos-da51-ipfs-authority-gate"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ciborium = "=0.2.2"
+sha2 = "=0.10.9"
+ipld-core = "=0.4.3"
+data-encoding = "2"
